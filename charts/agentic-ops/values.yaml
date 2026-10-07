@@ -18,6 +18,27 @@ gitlab:
   existingSecret: agentic-ops-gitlab
   tokenKey: GITLAB_TOKEN
 
+## OpenAI-compatible model endpoint for the run setup agents (builder and reviewer).
+## The API token is not part of the chart: create the Secret yourself (see "Model
+## endpoint" in the README). Without baseUrl and model the agents are off, and the
+## Run setup form and its input checks still work.
+llm:
+  ## Base URL up to and including /v1, e.g. https://llm.example.org/v1
+  baseUrl: ""
+  model: ""
+  ## Optional per-agent overrides of model
+  builderModel: ""
+  reviewerModel: ""
+  ## How the agents get structured answers: function_calling (works with most
+  ## OpenAI-compatible servers), json_schema (OpenAI structured outputs) or json_mode
+  structuredOutput: function_calling
+  temperature: 0
+  timeoutSeconds: 120
+  ## Repository tool calls each agent may make before it must answer
+  maxToolCalls: 8
+  existingSecret: agentic-ops-llm
+  tokenKey: LLM_API_KEY
+
 backend:
   replicaCount: 1
   image:

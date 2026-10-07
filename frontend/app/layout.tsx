@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "EWKit Agentic Ops",
-  description: "Browse EWKit analyses, configs and sample lists by campaign",
+  description: "Browse EWKit analyses and set up runs of them",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </Link>
           <nav>
             <Link href="/">Analyses</Link>
+            <Link href="/setups/new">New run</Link>
           </nav>
         </header>
         <main className="site-main">{children}</main>

@@ -77,6 +77,8 @@ export interface ConfigInfo {
   added_block_modules: string[];
   unavailable_modules: string[];
   output_tree: string | null;
+  run_systematics: boolean | null;
+  save_cutbookkeepers: boolean | null;
   parse_error: string | null;
 }
 
@@ -137,6 +139,118 @@ export interface ConfigFile {
   content: string;
 }
 
+// ----- run setup -----------------------------------------------------------------------
+
+export type Severity = "blocking" | "warning" | "info";
+
+export interface RunSpec {
+  analysis: string;
+  ref: string;
+  config: string;
+  runs: string[];
+  sample_lists: string[];
+  systematics: "do" | "no" | "config-default";
+  no_filter: boolean;
+  no_thinning: boolean;
+  include: string[];
+  skip: string[];
+  purpose: "production" | "test";
+  memory_mb: number;
+  files_per_job: number | null;
+}
+
+export interface Evidence {
+  path: string;
+  web_url: string | null;
+  lines: string[];
+  line_numbers: number[];
+}
+
+export interface Finding {
+  id: string;
+  code: string;
+  severity: Severity;
+  message: string;
+  field: string | null;
+  evidence: Evidence[];
+}
+
+export interface SelectionRow {
+  run: string;
+  sample: string;
+  file: string;
+  exists: boolean;
+  datasets: number;
+  selected: number;
+  campaigns: Record<string, number>;
+}
+
+export interface ValidationReport {
+  commit: string;
+  ref_kind: "tag" | "branch" | "commit";
+  findings: Finding[];
+  selection: SelectionRow[];
+}
+
+export interface IssueCard {
+  id: string;
+  source: "reviewer" | "validator";
+  severity: Severity;
+  title: string;
+  explanation: string;
+  finding_codes: string[];
+  evidence: Evidence[];
+  patch: Partial<RunSpec> | null;
+  patch_error: string | null;
+  effect: { clears: string[]; introduces: string[] } | null;
+  if_declined: string | null;
+  owners: string[];
+}
+
+export interface DraftInfo {
+  reasons: Record<string, string>;
+  assumptions: string[];
+  questions: string[];
+  request: string | null;
+  model: string | null;
+  prompt_version: string | null;
+}
+
+export interface SetupView {
+  id: string;
+  status: "needs_input" | "ready";
+  waiting: boolean;
+  request: string | null;
+  analysis_hint: string | null;
+  resolved: ResolvedRef | null;
+  spec: RunSpec | null;
+  draft: DraftInfo | null;
+  report: ValidationReport | null;
+  issues: IssueCard[];
+  errors: string[];
+  models: Record<string, { model: string | null; prompt_version: string }>;
+  history: { event: string; at: string; [key: string]: unknown }[];
+  agents_enabled: boolean;
+  blocking: number;
+}
+
+export interface AgentsStatus {
+  enabled: boolean;
+  base_url: string | null;
+  builder_model: string | null;
+  reviewer_model: string | null;
+  structured_output: string;
+  api_key_configured: boolean;
+  reachable: boolean | null;
+  detail: string | null;
+}
+
+export type SetupAction =
+  | { action: "apply"; accept: string[]; dismiss: string[] }
+  | { action: "edit"; spec: RunSpec }
+  | { action: "redraft"; request: string }
+  | { action: "finish" };
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -151,18 +265,41 @@ async function get<T>(path: string, params: Record<string, string | undefined> =
   for (const [key, value] of Object.entries(params)) {
     if (value) url.searchParams.set(key, value);
   }
+  // The backend caches by commit SHA; always ask it so ref names resolve fresh
+  return send<T>(url, { cache: "no-store" });
+}
+
+/** POSTs run the setup graph to its next pause, which can take a minute when a model is called. */
+async function post<T>(path: string, body: unknown): Promise<T> {
+  return send<T>(new URL(path, BACKEND_URL), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+}
+
+async function send<T>(url: URL, init: RequestInit): Promise<T> {
   let response: Response;
   try {
-    // The backend caches by commit SHA; always ask it so ref names resolve fresh
-    response = await fetch(url, { cache: "no-store" });
+    response = await fetch(url, init);
   } catch {
     throw new ApiError(503, `Cannot reach the backend at ${BACKEND_URL}`);
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new ApiError(response.status, body?.detail ?? `Backend returned ${response.status}`);
+    throw new ApiError(response.status, detailText(body?.detail) ?? `Backend returned ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+/** FastAPI details are strings, or lists of validation errors. */
+function detailText(detail: unknown): string | undefined {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => `${(d.loc ?? []).slice(1).join(".")}: ${d.msg}`).join("; ");
+  }
+  return undefined;
 }
 
 const seg = encodeURIComponent;
@@ -176,4 +313,9 @@ export const api = {
     get<SampleListDetail>(`/api/ewkit/analyses/${seg(folder)}/samples/${seg(name)}`, { ref }),
   configFile: (folder: string, name: string, ref?: string) =>
     get<ConfigFile>(`/api/ewkit/analyses/${seg(folder)}/configs/${seg(name)}`, { ref }),
+  agents: (check = false) => get<AgentsStatus>("/api/setups/agents", { check: check ? "true" : undefined }),
+  setup: (id: string) => get<SetupView>(`/api/setups/${seg(id)}`),
+  createSetup: (body: { ref?: string; analysis?: string; request?: string; spec?: RunSpec }) =>
+    post<SetupView>("/api/setups", body),
+  setupAction: (id: string, action: SetupAction) => post<SetupView>(`/api/setups/${seg(id)}/actions`, action),
 };

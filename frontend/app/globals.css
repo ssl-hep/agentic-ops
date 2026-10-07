@@ -97,6 +97,10 @@ p {
   font-weight: 650;
   color: var(--text);
 }
+.site-head nav {
+  display: flex;
+  gap: 1rem;
+}
 .site-head nav a {
   color: var(--muted);
 }
@@ -183,6 +187,7 @@ p {
 
 input,
 select,
+textarea,
 button {
   font: inherit;
   color: inherit;
@@ -194,6 +199,11 @@ button {
 input {
   min-width: 14rem;
   max-width: 100%;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  min-width: 0;
+  padding: 0;
 }
 button {
   background: var(--accent);
@@ -382,4 +392,213 @@ tbody tr:last-child th {
   padding: 1rem;
   overflow-x: auto;
   font: 12.5px/1.5 var(--mono);
+}
+
+/* Buttons that are not the main action */
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button.secondary,
+.button-link {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 600;
+  padding: 0.3rem 0.55rem;
+  text-decoration: none;
+}
+textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  resize: vertical;
+}
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.block {
+  display: block;
+}
+.panel-info {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+
+/* Run setup */
+.badge-blocking {
+  background: var(--bad-bg);
+  color: var(--bad-fg);
+}
+.badge-warning {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.badge-info {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+.setup-start {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.new-setup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+}
+.new-setup .filters {
+  margin: 0;
+}
+.request {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.request-text {
+  font-size: 1.05rem;
+}
+.builder-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+.builder-notes h3 {
+  font-size: 0.95rem;
+  margin: 0.25rem 0;
+}
+.builder-notes ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.redraft {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 0.75rem;
+}
+.setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 26rem) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.spec-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 1rem;
+}
+.field {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.field label {
+  margin-right: 0.9rem;
+}
+.field input:not([type="checkbox"], [type="radio"]),
+.field select {
+  min-width: 0;
+  width: 100%;
+}
+.field-label {
+  font-weight: 600;
+  color: var(--muted);
+}
+.field-flagged .field-label {
+  color: var(--bad-fg);
+}
+.field-flagged .field-label::after {
+  content: " •";
+}
+.form-actions {
+  padding-top: 0.75rem;
+}
+.issue-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.issue {
+  border-left-width: 4px;
+}
+.issue-blocking {
+  border-left-color: var(--bad-fg);
+}
+.issue-warning {
+  border-left-color: var(--warn-fg);
+}
+.issue-info {
+  border-left-color: var(--info-fg);
+}
+.issue-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.issue h3 {
+  margin: 0.5rem 0 0.25rem;
+}
+.issue-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--border);
+}
+.issue-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.issue-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+.patch {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.evidence {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.evidence-lines {
+  margin: 0.2rem 0 0.4rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface-2);
+  border-radius: 6px;
+  font: 12px/1.45 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.findings td {
+  vertical-align: top;
+}
+.finish {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.history {
+  padding-left: 1.25rem;
 }

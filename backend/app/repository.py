@@ -220,6 +220,31 @@ class EWKitRepository:
         self._files.put((sha, path), text)
         return text
 
+    async def read_file(self, sha: str, path: str) -> str:
+        """A file's text at a commit. Raises NotFoundError if it does not exist."""
+        try:
+            return await self._read(sha, path)
+        except GitLabNotFound as exc:
+            raise NotFoundError(f"No file {path} at {sha[:8]}") from exc
+
+    async def path_exists(self, sha: str, path: str) -> bool:
+        """Whether a path exists under data/ at a commit (or is CODEOWNERS)."""
+        if path in CODEOWNERS_PATHS:
+            return True
+        return path.rstrip("/") in await self._data_tree(sha)
+
+    async def blob_url(self, sha: str, path: str) -> str:
+        return await self._blob_url(sha, path)
+
+    async def ref_kind(self, ref: str) -> str:
+        """'tag', 'branch' or 'commit' for a ref as typed."""
+        refs = await self.refs()
+        if any(t.name == ref for t in refs.tags):
+            return "tag"
+        if any(b.name == ref for b in refs.branches):
+            return "branch"
+        return "commit"
+
     async def _codeowners(self, sha: str) -> list[tuple[str, list[str]]]:
         for path in CODEOWNERS_PATHS:
             try:
@@ -324,6 +349,7 @@ class EWKitRepository:
         modules = list(summary.added_block_modules)
         chain: list[ExtendStep] = []
         parse_error = summary.parse_error
+        run_systematics, save_cutbookkeepers = summary.run_systematics, summary.save_cutbookkeepers
 
         current_path, current = path, summary
         seen = {path}
@@ -339,6 +365,10 @@ class EWKitRepository:
             seen.add(target)
             current_path, current = target, ewkit.summarize_config(await self._read(sha, target))
             modules += current.added_block_modules
+            if run_systematics is None:
+                run_systematics = current.run_systematics
+            if save_cutbookkeepers is None:
+                save_cutbookkeepers = current.save_cutbookkeepers
             if current.parse_error and not parse_error:
                 parse_error = f"{target}: {current.parse_error}"
 
@@ -351,6 +381,8 @@ class EWKitRepository:
             added_block_modules=summary.added_block_modules,
             unavailable_modules=ewkit.unavailable_modules(modules),
             output_tree=summary.output_tree,
+            run_systematics=run_systematics,
+            save_cutbookkeepers=save_cutbookkeepers,
             parse_error=parse_error,
         )
 

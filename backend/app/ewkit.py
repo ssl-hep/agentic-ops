@@ -32,6 +32,9 @@ UNKNOWN_CAMPAIGN = "unknown"
 # Folders under data/ that are not analyses
 NON_ANALYSIS_FOLDERS = frozenset({"common"})
 
+# Folders EWKit's CI runs on example files (.gitlab-ci.yml at 17c998c); the others are never exercised
+CI_TESTED_FOLDERS = frozenset({"common", "CompressedSleptons", "RadiativeDecays", "DisplacedTrack"})
+
 SAMPLE_FILE_RE = re.compile(r"^(?P<run>Run\d+)_(?P<sample>[A-Za-z0-9_]+)\.txt$")
 CONFIG_FILE_RE = re.compile(r"^config[A-Za-z0-9_\-]*\.ya?ml$")
 
@@ -159,6 +162,9 @@ class ConfigSummary:
     blocks: list[str] = field(default_factory=list)
     added_block_modules: list[str] = field(default_factory=list)
     output_tree: str | None = None
+    # runSystematics / saveCutBookkeepers wherever they appear in the config; None if not set here
+    run_systematics: bool | None = None
+    save_cutbookkeepers: bool | None = None
     parse_error: str | None = None
 
 
@@ -182,7 +188,25 @@ def summarize_config(text: str) -> ConfigSummary:
             b["modulePath"] for b in added if isinstance(b, dict) and isinstance(b.get("modulePath"), str)
         ],
         output_tree=output.get("treeName") if isinstance(output, dict) else None,
+        run_systematics=_find_bool(doc, "runSystematics"),
+        save_cutbookkeepers=_find_bool(doc, "saveCutBookkeepers"),
     )
+
+
+def _find_bool(node: object, key: str) -> bool | None:
+    """The first boolean value of `key` anywhere in a parsed YAML document."""
+    if isinstance(node, dict):
+        if isinstance(node.get(key), bool):
+            return node[key]
+        children = node.values()
+    elif isinstance(node, list):
+        children = node
+    else:
+        return None
+    for child in children:
+        if (found := _find_bool(child, key)) is not None:
+            return found
+    return None
 
 
 def resolve_extend(config_path: str, target: str) -> str | None:

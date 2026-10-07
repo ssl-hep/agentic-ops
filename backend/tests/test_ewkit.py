@@ -103,3 +103,10 @@ def test_ref_slug() -> None:
     assert ewkit.ref_slug("ditaus_r3_v02") == "ditaus-r3-v02"
     assert ewkit.ref_slug("v1.2") == "v1-2"
     assert ewkit.ref_slug("Feature/Foo_") == "feature-foo"
+
+
+def test_systematics_flags() -> None:
+    summary = ewkit.summarize_config("CommonServices:\n  runSystematics: True\nOutput:\n  saveCutBookkeepers: False\n")
+    assert summary.run_systematics is True
+    assert summary.save_cutbookkeepers is False
+    assert ewkit.summarize_config("CommonServices: {}\n").run_systematics is None
