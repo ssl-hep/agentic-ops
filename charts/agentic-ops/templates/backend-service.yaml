@@ -1,0 +1,15 @@
+{{- $component := "backend" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agentic-ops.fullname" . }}-{{ $component }}
+  labels:
+    {{- include "agentic-ops.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.backend.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.backend.service.port }}
+      targetPort: http
+  selector:
+    {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 4 }}

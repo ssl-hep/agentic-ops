@@ -1,0 +1,52 @@
+## Application database. The chart renders a Secret (named by
+## postgres.settings.existingSecret) holding these credentials plus a
+## DATABASE_URL; both Postgres and the backend read from it.
+database:
+  name: agenticops
+  user: agenticops
+  ## Leave empty to auto-generate. Generated passwords are preserved on upgrade.
+  password: ""
+  ## Superuser (postgres) password. Leave empty to auto-generate.
+  superuserPassword: ""
+
+backend:
+  replicaCount: 1
+  image:
+    repository: agentic-ops-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources: {}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: agentic-ops-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources: {}
+
+imagePullSecrets: []
+
+## groundhog2k/postgres subchart (official docker.io/postgres image)
+## https://github.com/groundhog2k/helm-charts/tree/master/charts/postgres
+postgres:
+  settings:
+    existingSecret: agentic-ops-db-credentials
+    superuserPassword:
+      secretKey: POSTGRES_PASSWORD
+  userDatabase:
+    existingSecret: agentic-ops-db-credentials
+    name:
+      secretKey: DB_NAME
+    user:
+      secretKey: DB_USER
+    password:
+      secretKey: DB_PASSWORD
+  storage:
+    requestedSize: 1Gi

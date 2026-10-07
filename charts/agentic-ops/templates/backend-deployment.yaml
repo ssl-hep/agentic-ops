@@ -1,0 +1,51 @@
+{{- $component := "backend" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agentic-ops.fullname" . }}-{{ $component }}
+  labels:
+    {{- include "agentic-ops.labels" . | nindent 4 }}
+    {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 8 }}
+      annotations:
+        checksum/db-secret: {{ include (print $.Template.BasePath "/db-secret.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $component }}
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            {{- range $key := list "DATABASE_URL" "DB_HOST" "DB_PORT" "DB_NAME" "DB_USER" "DB_PASSWORD" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-ops.dbSecretName" $ }}
+                  key: {{ $key }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

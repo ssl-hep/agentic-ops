@@ -1,0 +1,11 @@
+apiVersion: v2
+name: agentic-ops
+description: agentic-ops - Next.js frontend, FastAPI backend and PostgreSQL
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: postgres
+    alias: postgres
+    version: "1.6.x"
+    repository: https://groundhog2k.github.io/helm-charts/

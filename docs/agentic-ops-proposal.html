@@ -1,0 +1,1153 @@
+<title>TopCP Agentic Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700&family=Red+Hat+Text:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: technical proposal. Sticky section index on the left (wide screens), one reading column, wide figures and tables scroll in their own containers. Amber marks every point where a human must approve. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #16202b;
+  --muted: #5a6878;
+  --rule: #d8dfe6;
+  --accent: #1f5fa8;
+  --accent-soft: #e4edf8;
+  --gate: #a85a0c;
+  --gate-soft: #fbefe1;
+  --ok: #2f7d4f;
+  --bad: #b3372f;
+  --code-bg: #eef2f6;
+  --font-display: "Red Hat Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Red Hat Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f151c; --surface: #16202a; --ink: #e3e9ef; --muted: #93a2b2; --rule: #2a3845;
+    --accent: #78aeef; --accent-soft: #1b2d42; --gate: #e8a456; --gate-soft: #33261a;
+    --ok: #6cc08f; --bad: #ec7d74; --code-bg: #1c2833; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f151c; --surface: #16202a; --ink: #e3e9ef; --muted: #93a2b2; --rule: #2a3845;
+  --accent: #78aeef; --accent-soft: #1b2d42; --gate: #e8a456; --gate-soft: #33261a;
+  --ok: #6cc08f; --bad: #ec7d74; --code-bg: #1c2833; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding-inline: 16px; padding-block: 0 64px;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h2 { font-size: 1.6rem; font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; }
+p { margin: 0; }
+ul, ol { margin: 0; padding-left: 1.25em; display: grid; gap: 0.35em; }
+
+.page { max-width: 1160px; margin: 0 auto; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 56px; }
+@media (max-width: 900px) { .page { grid-template-columns: minmax(0, 1fr); gap: 0; } .toc { display: none; } }
+
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; padding-top: 40px; font-size: 0.86rem; }
+.toc .label { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+.toc ol { list-style: none; padding: 0; gap: 2px; counter-reset: t; }
+.toc a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.toc a:hover { background: var(--accent-soft); color: var(--ink); }
+.toc a.gate-link { color: var(--gate); font-weight: 600; }
+
+main { min-width: 0; display: grid; gap: 64px; padding-top: 40px; }
+section { display: grid; gap: 20px; scroll-margin-top: 24px; }
+.prose { max-width: 68ch; display: grid; gap: 14px; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.74rem; color: var(--muted); font-weight: 600; }
+
+/* Header */
+header.doc { display: grid; gap: 18px; border-bottom: 1px solid var(--rule); padding-bottom: 32px; }
+header.doc h1 { font-size: clamp(2.1rem, 5vw, 3.1rem); font-weight: 700; letter-spacing: -0.01em; }
+header.doc .lede { font-size: 1.15rem; color: var(--ink); max-width: 62ch; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--muted); font-size: 0.88rem; }
+.meta span strong { color: var(--ink); font-weight: 600; }
+.status { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--gate-soft); color: var(--gate); font-weight: 600; font-size: 0.8rem; }
+
+/* Pipeline stepper */
+.pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.step { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; display: grid; gap: 6px; align-content: start; }
+.step .n { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+.step h3 { font-size: 1rem; }
+.step p { font-size: 0.88rem; color: var(--muted); line-height: 1.45; }
+.step.gate { border-color: var(--gate); background: var(--gate-soft); }
+.step.gate .n { color: var(--gate); font-weight: 600; }
+
+.phase { display: inline-block; padding: 1px 9px; border-radius: 999px; font: 600 0.72rem var(--font-body); letter-spacing: 0.02em; white-space: nowrap; }
+.phase.p1 { background: var(--accent-soft); color: var(--accent); }
+.phase.p2 { background: transparent; color: var(--muted); border: 1px dashed var(--muted); }
+.track { display: grid; gap: 10px; }
+.track-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.track-head h3 { font-size: 1.05rem; }
+.track-head p { font-size: 0.88rem; color: var(--muted); }
+.step.later { border-style: dashed; background: transparent; }
+.step.join { border-style: dashed; background: transparent; justify-items: start; }
+.comp.later { border-style: dashed; }
+.ms-phase { margin: 4px 0 18px 24px; font: 600 0.74rem var(--font-body); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 0.84rem; color: var(--muted); }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--rule); background: var(--surface); }
+.swatch.g { background: var(--gate-soft); border-color: var(--gate); }
+
+/* Figures */
+figure { margin: 0; display: grid; gap: 10px; }
+figcaption { font-size: 0.86rem; color: var(--muted); max-width: 68ch; }
+.figure-box { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; overflow-x: auto; }
+.figure-box svg { display: block; min-width: 760px; width: 100%; height: auto; }
+svg .box { fill: var(--surface); stroke: var(--rule); stroke-width: 1.2; }
+svg .box-strong { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+svg .box-gate { fill: var(--gate-soft); stroke: var(--gate); stroke-width: 1.2; }
+svg .group { fill: none; stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 1; }
+svg .t-title { fill: var(--ink); font: 700 13px var(--font-display); }
+svg .t-body { fill: var(--muted); font: 400 11.5px var(--font-body); }
+svg .t-mono { fill: var(--muted); font: 400 10.5px var(--font-mono); }
+svg .t-label { fill: var(--accent); font: 600 10.5px var(--font-body); }
+svg .edge { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+svg .edge-gate { stroke: var(--gate); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+svg .arrowhead { fill: var(--muted); }
+svg .arrowhead-gate { fill: var(--gate); }
+pre.mermaid { margin: 0; background: transparent; }
+
+/* Component cards */
+.components { display: grid; gap: 14px; }
+.comp { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 20px 22px; display: grid; gap: 12px; }
+.comp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; }
+.comp-head .tag { font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent); }
+.comp .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 28px; }
+.comp .cols > div { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.comp h4 { margin: 0; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.comp ul { font-size: 0.93rem; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 640px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; border: 1px solid currentColor; }
+.pill.low { color: var(--ok); }
+.pill.med { color: var(--gate); }
+.pill.high { color: var(--bad); }
+.pill.human { color: var(--gate); background: var(--gate-soft); border-color: var(--gate); }
+.pill.auto { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+
+/* Code block */
+pre.code { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.55; color: var(--ink); }
+pre.code .c { color: var(--muted); }
+
+/* Example incident card */
+.incident { background: var(--surface); border: 1px solid var(--gate); border-radius: 12px; overflow: hidden; max-width: 680px; }
+.incident .bar { background: var(--gate-soft); color: var(--gate); padding: 8px 16px; font-size: 0.8rem; font-weight: 600; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.incident .body { padding: 16px; display: grid; gap: 12px; font-size: 0.93rem; }
+.incident dl { margin: 0; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; }
+.incident dt { color: var(--muted); font-size: 0.82rem; padding-top: 2px; }
+.incident dd { margin: 0; min-width: 0; }
+.incident .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: 600 0.85rem var(--font-body); padding: 7px 14px; border-radius: 8px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.mock-note { font-size: 0.78rem; color: var(--muted); font-style: italic; }
+
+/* Decisions */
+.dec-intro { display: grid; gap: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 600 0.82rem var(--font-body); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); color: var(--muted); cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.chip .count { font-family: var(--font-mono); font-weight: 400; margin-left: 4px; opacity: 0.75; }
+.decisions { display: grid; gap: 10px; }
+.dec { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 16px 20px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 16px; }
+.dec.blocker { border-left: 4px solid var(--gate); }
+.dec .id { font-family: var(--font-mono); font-size: 0.85rem; color: var(--muted); padding-top: 3px; }
+.dec .main { display: grid; gap: 8px; min-width: 0; }
+.dec .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.dec h3 { font-size: 1.05rem; }
+.dec .area { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+.dec .when { font-family: var(--font-mono); font-size: 0.74rem; color: var(--gate); }
+.dec .q { color: var(--ink); font-size: 0.94rem; }
+.dec .opts { font-size: 0.9rem; color: var(--muted); }
+.dec .lean { font-size: 0.9rem; background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; }
+.dec .lean strong { color: var(--accent); }
+@media (max-width: 520px) { .dec { grid-template-columns: minmax(0, 1fr); } }
+
+.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.panel ul { font-size: 0.93rem; }
+
+.milestones { display: grid; gap: 0; border-left: 2px solid var(--rule); margin-left: 8px; }
+.ms { position: relative; padding: 0 0 22px 24px; display: grid; gap: 4px; max-width: 72ch; }
+.ms::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.ms .ms-id { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); }
+.ms p { font-size: 0.93rem; color: var(--muted); }
+.ms .exit { font-size: 0.88rem; }
+
+.sources { font-size: 0.88rem; color: var(--muted); }
+.sources ul { gap: 4px; }
+footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--rule); padding-top: 20px; }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="page">
+  <nav class="toc" aria-label="Sections">
+    <div class="label">Contents</div>
+    <ol>
+      <li><a href="#summary">Summary</a></li>
+      <li><a href="#goals">Goals and scope</a></li>
+      <li><a href="#lifecycle">Request lifecycle</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#monitor">Monitoring agent</a></li>
+      <li><a href="#interventions">Interventions</a></li>
+      <li><a href="#webapp">Web app</a></li>
+      <li><a href="#deployment">Deployment</a></li>
+      <li><a href="#data">Data model</a></li>
+      <li><a href="#safety">Safety and trust</a></li>
+      <li><a href="#eval">Evaluation</a></li>
+      <li><a href="#plan">Delivery plan</a></li>
+      <li><a href="#decisions" class="gate-link">Decisions needed</a></li>
+      <li><a href="#confirm">Questions for UChicago AF</a></li>
+      <li><a href="#sources">Sources</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="doc">
+      <div class="eyebrow">IRIS-HEP · Design proposal</div>
+      <h1>TopCP Agentic Ops</h1>
+      <p class="lede">An assistant that runs TopCPToolkit n-tuple productions at the UChicago Analysis Facility, watches the HTCondor jobs, and proposes fixes that a person approves before anything changes. It starts from the config and input list a physicist commits to GitLab, and later learns to write both from a plain-language request.</p>
+      <div class="meta">
+        <span class="status">Draft v0.4, for discussion</span>
+        <span><strong>Updated</strong> 7 October 2026</span>
+        <span><strong>Stage</strong> Pre-implementation, no code yet</span>
+        <span><strong>Changes</strong> v0.2 monitor first, authoring and discovery in Phase 2 · v0.3 inputs arrive as GitLab commits · v0.4 deployment section</span>
+      </div>
+    </header>
+
+    <section id="summary">
+      <h2>Summary</h2>
+      <div class="prose">
+        <p>Producing TopCPToolkit (TCT) n-tuples is routine work that still takes a physicist days: writing and debugging a <code>reco.yaml</code>, finding the right DAOD containers for every DSID and MC campaign, splitting them into HTCondor jobs, and babysitting the queue for held jobs, XRootD read errors and memory overruns.</p>
+        <p>This proposal combines four existing pieces into one supervised workflow:</p>
+        <ul>
+          <li><strong>The <code>topcptoolkit</code> agent skill</strong> from the usatlas Claude marketplace, which encodes TCT config blocks, CLI options and known pitfalls. It drafts the YAML (Phase 2).</li>
+          <li><strong>The UChicago AF MCP Platform</strong> (<code>atlas-af</code> at <code>mcp.af.uchicago.edu</code>), a credential-brokered gateway to Rucio, AMI, HTCondor and the AF filesystem. It runs and inspects the jobs, and in Phase 2 also finds the data.</li>
+          <li><strong>LangGraph</strong> for durable, checkpointed agent graphs, one that authors and submits a production and one that monitors it for hours or days.</li>
+          <li><strong>GitLab</strong> as the source of truth for inputs: the physicist's repository holds <code>reco.yaml</code> and the replica list, and the commit SHA becomes the production's identity.</li>
+          <li><strong>CopilotKit</strong> for the web app, which shows live production state and renders the agent's proposed interventions as approval cards.</li>
+        </ul>
+        <p><strong>The work is split into two phases, monitor first.</strong> In Phase 1 the physicist commits their own <code>reco.yaml</code> and replica list to a GitLab repository, and every production is pinned to a commit. The system checks them, runs a test job, submits the production and monitors it, which puts the hardest and least-proven part (the monitoring agent and its approval loop) in front of users early. Phase 2 adds the agentic front end: drafting the YAML from a plain-language request with the TCT skill, and finding the samples through Rucio and AMI. Phase 2's agents deliver the same files to the same repository as merge requests, so nothing downstream changes.</p>
+        <p>The governing rule is simple: <strong>the model proposes, deterministic code executes, and a person approves</strong> anything that spends compute, writes data, or changes the physics configuration.</p>
+      </div>
+    </section>
+
+    <section id="goals">
+      <h2>Goals and scope</h2>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Goals</h3>
+          <ul>
+            <li><span class="phase p1">Phase 1</span> Problems in a running production are noticed within minutes, explained in plain language with evidence, and paired with a concrete fix.</li>
+            <li><span class="phase p1">Phase 1</span> No production starts without a passing test job and an approved cost estimate.</li>
+            <li><span class="phase p2">Phase 2</span> A first-time TCT user gets a valid, runnable config and a correct sample list from a one-paragraph request.</li>
+            <li>Every action is attributable to a person and reproducible from recorded provenance (TCT tag, AnalysisBase release, YAML hash, sample list, skill version, model ID).</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Out of scope for Phase 1</h3>
+          <ul>
+            <li>Drafting <code>reco.yaml</code> from a plain-language request (Phase 2).</li>
+            <li>Finding samples through Rucio and AMI (Phase 2). Phase 1 only checks the replicas the user supplies.</li>
+            <li>Writing custom C++ TCT algorithms or new config blocks.</li>
+            <li>Grid submission through PanDA (<code>submitToGrid.py</code>).</li>
+            <li>Downstream histogramming and fitting (FastFrames, TRExFitter, cabinetry).</li>
+            <li>Fully autonomous remediation with no human in the loop.</li>
+          </ul>
+          <p class="mono" style="color:var(--muted);font-size:0.8rem">The last four are candidates for after Phase 2. See D4 and D5.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Request lifecycle</h2>
+      <div class="prose">
+        <p>Phase 1 starts from files the physicist commits to a GitLab repository. Phase 2 adds four stages in front that generate those same inputs. Approval gates are where the workflow stops until the requester signs off; interventions during the run add further gates, one per proposed fix.</p>
+      </div>
+      <div class="track">
+        <div class="track-head"><span class="phase p1">Phase 1</span><h3>Config and replicas from GitLab</h3></div>
+        <div class="pipeline">
+          <div class="step"><span class="n">1</span><h3>Commit inputs</h3><p>Push <code>reco.yaml</code>, <code>samples.yaml</code> and <code>production.yaml</code> to GitLab, then start a production from that commit.</p></div>
+          <div class="step"><span class="n">2</span><h3>Check inputs</h3><p>Lint the YAML at that commit, resolve the replica list read-only through Rucio, one manifest row per DSID and campaign.</p></div>
+          <div class="step gate"><span class="n">Gate B</span><h3>Approve plan</h3><p>Manifest, job split, core-hours and output size against the <code>/data</code> quota.</p></div>
+          <div class="step"><span class="n">4</span><h3>Test job</h3><p>One short-queue job per sample type, <code>-e 1000</code>, then automatic output checks.</p></div>
+          <div class="step gate"><span class="n">Gate C</span><h3>Approve launch</h3><p>Test results, branch list and timing extrapolation. Go or revise.</p></div>
+          <div class="step"><span class="n">6</span><h3>Run and monitor</h3><p>Full production on HTCondor. Monitor agent proposes fixes, each one approved separately.</p></div>
+          <div class="step"><span class="n">7</span><h3>Validate and deliver</h3><p>Check trees, CutBookkeepers and event counts, then hand over paths and a provenance record.</p></div>
+        </div>
+      </div>
+      <div class="track">
+        <div class="track-head"><span class="phase p2">Phase 2</span><h3>Agentic front end</h3><p>The agent's output lands in the same repository as a merge request. Merging it is step 1.</p></div>
+        <div class="pipeline">
+          <div class="step later"><span class="n">2a</span><h3>Request</h3><p>Plain-language ask plus a structured form: samples, objects, selections, systematics.</p></div>
+          <div class="step later"><span class="n">2b</span><h3>Draft config</h3><p>Skill-guided agent writes <code>reco.yaml</code> (and particle/parton YAML if asked) and explains each block.</p></div>
+          <div class="step gate"><span class="n">Gate A</span><h3>Approve config</h3><p>Physicist reviews the YAML and rationale, edits, and approves the merge request.</p></div>
+          <div class="step later"><span class="n">2d</span><h3>Find samples</h3><p>Rucio and AMI lookups write <code>samples.yaml</code> and open a merge request for it.</p></div>
+          <div class="step join"><span class="n">→ 1</span><h3>Merge</h3><p>The merge commit joins the Phase 1 flow.</p></div>
+        </div>
+      </div>
+      <div class="legend"><span><span class="swatch g"></span>Human approval required</span><span><span class="swatch"></span>Agent works on its own</span><span><span class="swatch" style="border-style:dashed;background:transparent"></span>Added in Phase 2</span></div>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <div class="prose">
+        <p>Four runtime pieces plus the physicist's GitLab repository: a React web app with CopilotKit (Next.js assumed; see D22), a CopilotKit runtime that speaks the AG-UI protocol, a Python agent service running the LangGraph graphs (a submission graph and a monitor graph in Phase 1, with authoring steps added in Phase 2), and the existing UChicago MCP gateway. Postgres holds LangGraph checkpoints, application records and the audit log. GitLab notifies the agent service of new commits and receives commit statuses back, and in Phase 2 merge requests.</p>
+      </div>
+      <figure>
+        <div class="figure-box">
+          <svg viewBox="0 0 980 440" role="img" aria-labelledby="arch-title">
+            <title id="arch-title">System architecture: browser, CopilotKit runtime, LangGraph agent service, UChicago MCP gateway and its backends</title>
+            <defs>
+              <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+              <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-gate"/></marker>
+            </defs>
+
+            <!-- Browser -->
+            <rect x="16" y="40" width="190" height="200" rx="10" class="box"/>
+            <text x="30" y="64" class="t-title">Physicist's browser</text>
+            <text x="30" y="82" class="t-body">React + CopilotKit</text>
+            <text x="30" y="110" class="t-mono">Request composer</text>
+            <text x="30" y="128" class="t-mono">Config review</text>
+            <text x="30" y="146" class="t-mono">Sample manifest</text>
+            <text x="30" y="164" class="t-mono">Production dashboard</text>
+            <rect x="26" y="176" width="170" height="26" rx="6" class="box-gate"/>
+            <text x="36" y="193" class="t-mono" style="fill:var(--gate)">Intervention inbox</text>
+            <text x="30" y="226" class="t-mono">Audit log</text>
+
+            <!-- GitLab -->
+            <rect x="16" y="300" width="190" height="96" rx="10" class="box-strong"/>
+            <text x="30" y="324" class="t-title">GitLab repository</text>
+            <text x="30" y="344" class="t-mono">reco.yaml</text>
+            <text x="30" y="360" class="t-mono">samples.yaml</text>
+            <text x="30" y="376" class="t-mono">production.yaml</text>
+            <path d="M206 336 L430 300" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
+            <text x="240" y="352" class="t-label">push webhooks in</text>
+            <text x="240" y="366" class="t-label">statuses and MRs out</text>
+
+            <!-- CopilotKit runtime -->
+            <rect x="244" y="90" width="150" height="76" rx="10" class="box"/>
+            <text x="258" y="116" class="t-title">CopilotKit runtime</text>
+            <text x="258" y="134" class="t-body">Node service</text>
+            <text x="258" y="152" class="t-mono">AG-UI event stream</text>
+
+            <!-- Agent service -->
+            <rect x="430" y="20" width="290" height="300" rx="12" class="group"/>
+            <text x="444" y="42" class="t-title">Agent service (Python)</text>
+            <rect x="444" y="56" width="262" height="66" rx="8" class="box-strong"/>
+            <text x="456" y="78" class="t-title">Submission graph</text>
+            <text x="456" y="96" class="t-mono">check inputs → plan →</text>
+            <text x="456" y="111" class="t-mono">test job → submit  (+ authoring, P2)</text>
+            <rect x="444" y="134" width="262" height="66" rx="8" class="box-strong"/>
+            <text x="456" y="156" class="t-title">Monitor graph</text>
+            <text x="456" y="174" class="t-mono">observe → detect → diagnose →</text>
+            <text x="456" y="189" class="t-mono">propose → interrupt → act</text>
+            <rect x="444" y="214" width="126" height="90" rx="8" class="box"/>
+            <text x="456" y="236" class="t-title">TCT skill (P2)</text>
+            <text x="456" y="254" class="t-body">SKILL.md +</text>
+            <text x="456" y="270" class="t-body">references,</text>
+            <text x="456" y="286" class="t-body">pinned to a git SHA</text>
+            <rect x="580" y="214" width="126" height="90" rx="8" class="box"/>
+            <text x="592" y="236" class="t-title">Claude models</text>
+            <text x="592" y="254" class="t-body">Diagnosis, later</text>
+            <text x="592" y="270" class="t-body">authoring; cheaper</text>
+            <text x="592" y="286" class="t-body">model for triage</text>
+
+            <!-- Postgres -->
+            <rect x="430" y="350" width="290" height="62" rx="10" class="box"/>
+            <text x="444" y="374" class="t-title">Postgres</text>
+            <text x="444" y="394" class="t-mono">checkpoints · requests · audit</text>
+
+            <!-- MCP gateway -->
+            <rect x="760" y="20" width="204" height="72" rx="10" class="box-strong"/>
+            <text x="774" y="44" class="t-title">atlas-af MCP gateway</text>
+            <text x="774" y="62" class="t-mono">mcp.af.uchicago.edu/mcp</text>
+            <text x="774" y="80" class="t-body">per-call credential broker</text>
+
+            <!-- Backends -->
+            <rect x="760" y="116" width="98" height="40" rx="8" class="box"/>
+            <text x="772" y="141" class="t-title">Rucio</text>
+            <rect x="866" y="116" width="98" height="40" rx="8" class="box"/>
+            <text x="878" y="141" class="t-title">AMI</text>
+            <rect x="760" y="166" width="98" height="40" rx="8" class="box"/>
+            <text x="772" y="191" class="t-title">HTCondor</text>
+            <rect x="866" y="166" width="98" height="40" rx="8" class="box"/>
+            <text x="878" y="191" class="t-title">AF files</text>
+
+            <!-- Workers & storage -->
+            <rect x="760" y="236" width="204" height="70" rx="10" class="box"/>
+            <text x="774" y="258" class="t-title">Worker nodes</text>
+            <text x="774" y="276" class="t-mono">runTop_el.py in an</text>
+            <text x="774" y="291" class="t-mono">AnalysisBase 25.2 image</text>
+            <rect x="760" y="330" width="204" height="82" rx="10" class="box"/>
+            <text x="774" y="352" class="t-title">Storage</text>
+            <text x="774" y="370" class="t-mono">in:  XCache root://</text>
+            <text x="774" y="386" class="t-mono">out: /data/&lt;user&gt;</text>
+            <text x="774" y="402" class="t-mono">opt: LOCALGROUPDISK</text>
+
+            <!-- Edges -->
+            <path d="M206 128 H244" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
+            <path d="M394 128 H444" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
+            <text x="398" y="118" class="t-label">state</text>
+            <path d="M206 189 H444" class="edge-gate" marker-start="url(#ahg)"/>
+            <text x="236" y="206" class="t-label" style="fill:var(--gate)">interrupts → approval cards</text>
+            <path d="M706 89 H760" class="edge" marker-end="url(#ah)"/>
+            <path d="M706 167 C 735 167, 735 70, 760 70" class="edge" marker-end="url(#ah)"/>
+            <text x="726" y="62" class="t-label">MCP</text>
+            <path d="M862 92 V116" class="edge" marker-end="url(#ah)"/>
+            <path d="M809 206 V236" class="edge" marker-end="url(#ah)"/>
+            <path d="M862 306 V330" class="edge" marker-end="url(#ah)"/>
+            <path d="M575 320 V350" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
+          </svg>
+        </div>
+        <figcaption>The agent never holds Rucio, AMI or x509 credentials itself. The MCP gateway mints short-lived per-user credentials on each call, so the open problem is how a long-running monitor keeps a valid user session (decision D1). Boxes marked P2 arrive in Phase 2. GitLab content is read through the GitLab API and is never executed.</figcaption>
+      </figure>
+    </section>
+
+    <section id="components">
+      <h2>Components</h2>
+      <div class="components">
+
+        <article class="comp">
+          <div class="comp-head"><h3>Provided inputs and planning</h3><span class="phase p1">Phase 1</span><span class="tag">stages 1–2 · Gate B</span></div>
+          <p>Each analysis keeps its inputs in a GitLab repository. The physicist commits a <code>reco.yaml</code> (plus <code>particle.yaml</code> or <code>parton.yaml</code> if used), a replica list and a small production settings file, then starts a production from a specific commit. The production is pinned to that SHA, so the inputs cannot change underneath a running job. The system builds the sample manifest from the files, with <strong>each job cluster covering exactly one DSID and campaign</strong>. TCT requires this: mixing DSIDs corrupts CutBookkeeper normalisation. No model is involved at this stage; every check is deterministic.</p>
+          <div class="cols">
+            <div><h4>Input checks</h4><ul><li>YAML parses; block names and keys exist in the TCT settings for the chosen release</li><li>Collection names match the input format (<code>AnalysisJets</code> for PHYSLITE, <code>AntiKt4EMPFlowJets</code> for PHYS)</li><li>Cut values look like MeV, not GeV</li><li>Every replica resolves through read-only Rucio calls; missing or unreachable files are listed</li><li>Each sample's files share one DSID and campaign; mixed groups are rejected with an explanation</li></ul></div>
+            <div><h4>Plan estimate shown at Gate B</h4><ul><li>Core-hours, from the test job's events/second, or a calibrated default before the test runs</li><li>Expected output size against the 5 TB <code>/data</code> quota</li><li>Queue choice: short (4 h limit) or long (72 h limit), and whether to allow MWT2 overflow</li><li>Files per job and number of jobs per sample</li></ul></div>
+          </div>
+          <pre class="code"><span class="c"># proposed repository layout (one GitLab project per analysis)</span>
+my-ttbar-ntuples/
+├── production.yaml   <span class="c"># TCT release, queue, output area, who may approve</span>
+├── reco.yaml         <span class="c"># TopCPToolkit config; particle.yaml / parton.yaml optional</span>
+└── samples.yaml      <span class="c"># replica list, one entry per DSID and campaign (D23)</span></pre>
+          <div class="cols">
+            <div><h4>GitLab integration</h4><ul><li>A push webhook tells the agent service about new commits; a periodic poll covers missed webhooks</li><li>Files are read at the exact commit through the GitLab API</li><li>Results go back as commit statuses with a link to the dashboard: input checks, test job, production state</li><li>Optional: the cheap checks (YAML lint, manifest schema) also run as a GitLab CI job the project includes</li></ul></div>
+            <div><h4>What starts a production</h4><ul><li>Commits alone only trigger input checks, so pushing work in progress is safe</li><li>A production starts when the physicist picks a commit in the web app, or pushes a tag matching an agreed pattern (D24)</li><li>A config fix during a run is a new commit, which becomes a new config version with its own test job</li></ul></div>
+          </div>
+          <p style="font-size:0.9rem;color:var(--muted)">Open choices: the replica list format (D23), what triggers a production (D24), how the service connects to GitLab (D25), and where the input checks run (D26).</p>
+        </article>
+
+        <article class="comp later">
+          <div class="comp-head"><h3>Request intake</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2a</span></div>
+          <p>Physicists describe what they want in prose, and a structured form beside the chat fills in as the agent parses it. Either side can be edited. The output is a typed <code>AnalysisRequest</code> that later stages read instead of re-reading the chat.</p>
+          <div class="cols">
+            <div><h4>Captured fields</h4><ul><li>Physics process and samples (DSIDs, or a description the agent resolves)</li><li>Data periods and MC campaigns (e.g. data22–24, mc23a/d/e)</li><li>Input format: <code>DAOD_PHYS</code> or <code>DAOD_PHYSLITE</code>, p-tag</li><li>Objects and working points, b-tagger, triggers</li><li>Event selection regions</li><li>Systematics: full, a named subset, or none</li><li>Analysis levels: detector, particle, parton</li></ul></div>
+            <div><h4>Agent behaviour</h4><ul><li>Asks clarifying questions only for fields that change the output, such as PHYS vs PHYSLITE or the tagger working point</li><li>Offers starting templates, e.g. ttbar lepton+jets or single-top t-channel</li><li>Can start from a <code>reco.yaml</code> already in the analysis repository</li></ul></div>
+          </div>
+        </article>
+
+        <article class="comp later">
+          <div class="comp-head"><h3>Config authoring</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2b · Gate A</span></div>
+          <p>A LangGraph node runs a Claude agent with the <code>topcptoolkit</code> skill loaded. It writes the YAML block by block (<code>CommonServices</code>, <code>Electrons</code>, <code>Muons</code>, <code>Jets</code>, <code>MissingET</code>, <code>OverlapRemoval</code>, <code>EventSelection</code>, <code>Thinning</code>, <code>Output</code>) and attaches a short rationale to each block.</p>
+          <div class="cols">
+            <div><h4>Deterministic checks before Gate A</h4><ul><li>All the Phase 1 YAML checks, reused unchanged</li><li>Cut values look like MeV, not GeV (a 25 in a pT cut is flagged)</li><li>The b-tag decoration in <code>EventSelection</code> matches the tagger and working point in <code>Jets</code></li><li>Every container written in <code>Output</code> is produced upstream</li></ul></div>
+            <div><h4>What the reviewer sees</h4><ul><li>The YAML with an inline diff against the template or imported file</li><li>Per-block rationale that cites the skill's guidance</li><li>Predicted output branches, so they can confirm what will be saved</li><li>Edit in place, ask the agent to revise, or approve</li><li>The approved draft is pushed to a branch and opened as a merge request; merging it hands over to Phase 1 (D27)</li></ul></div>
+          </div>
+        </article>
+
+        <article class="comp later">
+          <div class="comp-head"><h3>Sample discovery</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2d</span></div>
+          <p>The agent resolves the request into concrete containers using <code>ami_*</code> tools (physics parameters, AMI tags, hashtags) and <code>rucio-atlas_*</code> tools (DIDs, file lists, replicas). It writes <code>samples.yaml</code> in the Phase 1 format and opens a merge request. Once merged, it goes through the same input checks and Gate B.</p>
+          <div class="cols">
+            <div><h4>Manifest columns</h4><ul><li>DSID, campaign, container name, p-tag</li><li>Files, events, total size</li><li>Replica availability at MWT2 and through XCache</li><li>Cross-section, k-factor, filter efficiency (from AMI)</li><li>Planned files per job and number of jobs</li></ul></div>
+            <div><h4>What discovery adds over Phase 1</h4><ul><li>Choosing containers from a physics description instead of a list</li><li>Picking the right p-tag and AMI tag for each campaign</li><li>Preferring containers with complete replicas near MWT2</li><li>Pulling AMI totals so completion can be checked against expected event counts</li></ul></div>
+          </div>
+        </article>
+
+        <article class="comp">
+          <div class="comp-head"><h3>Build, test and submit</h3><span class="phase p1">Phase 1</span><span class="tag">stages 4–6 · Gate C</span></div>
+          <p>TCT is compiled from source against AnalysisBase 25.2.x. Where that build lives is an open decision (D3); the working assumption is a container image per TCT release tag so that jobs do not compile anything. Submission generates one HTCondor cluster per manifest row, following AF conventions.</p>
+          <pre class="code"><span class="c"># sketch of a generated submit description (illustrative, not final)</span>
+universe                = vanilla
+executable              = run_tct.sh          <span class="c"># wraps runTop_el.py -i inputs_$(ProcId).txt -o out</span>
++SingularityImage       = "&lt;TCT image for tag vX.Y.Z&gt;"
++queue                  = "short"             <span class="c"># or long, chosen at Gate B</span>
++ALLOW_MWT2             = True                <span class="c"># overflow, if approved</span>
+request_cpus            = 1
+request_memory          = 2GB
+use_x509userproxy       = true                <span class="c"># proxy minted by the broker? see D1</span>
+log    = logs/$(ClusterId).log
+output = logs/$(ClusterId).$(ProcId).out
+error  = logs/$(ClusterId).$(ProcId).err
++AgenticOpsProduction   = "&lt;production id&gt;"   <span class="c"># custom ClassAd for tracking</span>
+queue $(nJobs)</pre>
+          <div class="cols">
+            <div><h4>Test job checks</h4><ul><li>Exit code zero and a <code>reco</code> tree present</li><li>CutBookkeeper and <code>listOfSystematics</code> histograms present</li><li>Branch list matches what the <code>Output</code> block asks for</li><li>Events/second and peak memory, used to size the full run</li></ul></div>
+            <div><h4>Submission safeguards</h4><ul><li>Idempotency key per cluster, so a retried submit cannot double-submit</li><li>Hard cap on jobs and core-hours per production, set at Gate B</li><li>Custom ClassAd tag on every job so the monitor can find them</li></ul></div>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <section id="monitor">
+      <h2>Monitoring agent</h2>
+      <div class="prose">
+        <p>The monitor is a LangGraph graph with one thread per production, checkpointed in Postgres so it survives restarts. It does not sleep in-process. Each check is a short run triggered on a schedule, which keeps load on the schedd predictable and lets a production be paused by simply not scheduling the next check.</p>
+        <p>Detection is rule-based and cheap: state counts, hold reasons, exit codes, time spent idle, throughput against the plan. The model is called only when a rule fires, to read the evidence, diagnose the cause, and draft an intervention from a fixed catalogue.</p>
+      </div>
+      <figure>
+        <div class="figure-box">
+<pre class="mermaid">
+flowchart LR
+  T([Scheduled check]) --> O[Observe: queue state, hold reasons, job logs]
+  O --> D{Diff against last snapshot}
+  D -- nothing new --> S([Schedule next check])
+  D -- rule fired --> G[Diagnose: model reads evidence]
+  G --> P[Propose intervention from catalogue]
+  P --> Q{Policy}
+  Q -- auto-allowed --> A[Execute through MCP]
+  Q -- needs approval --> I[[interrupt: approval card]]
+  I -- approve or modify --> A
+  I -- reject --> S
+  A --> V[Verify effect on next check] --> S
+  D -- all jobs finished --> X[Validate outputs] --> R([Final report and provenance])
+</pre>
+        </div>
+        <figcaption>One pass of the monitor graph. The <code>interrupt</code> node pauses the thread; CopilotKit renders the pending interrupt as a card, and the person's answer resumes the graph.</figcaption>
+      </figure>
+      <div class="two-col">
+        <div class="panel">
+          <h3>What it watches</h3>
+          <ul>
+            <li>Job state counts per cluster: idle, running, held, completed, removed</li>
+            <li>Hold reasons, e.g. memory over request, proxy expired, file transfer failure</li>
+            <li>Idle time beyond the norm, with the equivalent of <code>condor_q -analyze</code></li>
+            <li>Failed exits, with the tail of stderr parsed for known TCT and XRootD signatures</li>
+            <li>Throughput against the Gate B estimate</li>
+            <li>Output files arriving in <code>/data</code>, opened with uproot for a quick check</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Completion criteria</h3>
+          <ul>
+            <li>Every input file was processed exactly once, or an explicit, approved exclusion list exists</li>
+            <li>The sum of <code>CutBookkeeper</code> initial events matches the expected total for each sample: from Rucio file metadata in Phase 1, and from AMI as well once discovery arrives in Phase 2</li>
+            <li>No output file is zero-length or missing the <code>reco</code> tree</li>
+            <li>A provenance record is written next to the outputs</li>
+          </ul>
+          <p style="font-size:0.88rem;color:var(--muted)">When to stop retrying and accept a partial production is decision D20.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="interventions">
+      <h2>Interventions</h2>
+      <div class="prose">
+        <p>The agent can only propose actions from a typed catalogue. Each entry has a fixed implementation, a risk level and a default approval policy. The model fills in parameters and writes the explanation; it cannot invent new kinds of action.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Intervention</th><th>Mechanism</th><th>Risk</th><th>Default policy</th></tr></thead>
+          <tbody>
+            <tr><td>Retry failed jobs with identical settings</td><td>Resubmit the failed subset</td><td><span class="pill low">Low</span></td><td><span class="pill auto">Auto, once</span> then approval</td></tr>
+            <tr><td>Raise memory and release held jobs</td><td><code>condor_qedit RequestMemory</code>, <code>condor_release</code></td><td><span class="pill low">Low</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Move jobs to the long queue, or allow MWT2 overflow</td><td>Edit or resubmit with new ClassAds</td><td><span class="pill low">Low</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Re-split into fewer files per job</td><td>Remove and resubmit with new input lists</td><td><span class="pill med">Medium</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Read from a different replica, or skip a bad site</td><td>Regenerate input lists from Rucio</td><td><span class="pill med">Medium</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Replicate a dataset to <code>MWT2_UC_LOCALGROUPDISK</code></td><td>Rucio replication rule (uses 15 TB group quota)</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Change the YAML and rerun affected samples</td><td>Agent opens a merge request with the change; once merged, new test job and resubmit</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval + config review and new test job</span></td></tr>
+            <tr><td>Abort the production</td><td><code>condor_rm</code> on all clusters</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Renew credentials or link identity</td><td>Only the user can do this</td><td>–</td><td>Notify the user with instructions</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure>
+        <div class="incident" role="img" aria-label="Example approval card">
+          <div class="bar"><span>Needs approval · Monitor agent</span><span class="mono">ttbar-ljets-mc23 · cluster 5</span></div>
+          <div class="body">
+            <p><strong>142 of 1,200 jobs are held because they used more memory than requested.</strong> They all process mc23e files from the same DSID, which carry more pileup than the test sample.</p>
+            <dl>
+              <dt>Evidence</dt><dd>Hold reason: memory usage exceeded <code>request_memory</code> (2 GB). Peak resident memory in three completed neighbours: 2.4–2.6 GB.</dd>
+              <dt>Proposal</dt><dd>Set <code>RequestMemory = 4096</code> on the 142 held jobs and release them.</dd>
+              <dt>Cost</dt><dd>No new core-hours. Fewer slots fit 4 GB jobs, so these may wait longer in the queue.</dd>
+              <dt>If declined</dt><dd>The jobs stay held. The production cannot complete for this sample.</dd>
+            </dl>
+            <div class="actions"><span class="btn primary">Approve</span><span class="btn">Change value</span><span class="btn">Reject</span><span class="btn">Ask a question</span></div>
+            <p class="mock-note">Illustrative mock-up of the card the web app would render. Buttons are inactive here.</p>
+          </div>
+        </div>
+      </figure>
+    </section>
+
+    <section id="webapp">
+      <h2>Web app</h2>
+      <div class="prose">
+        <p>A React application (Next.js assumed, see D22) using CopilotKit's LangGraph integration. Shared agent state streams to the browser over AG-UI, so the dashboard and the chat always show the same picture. A chat sidebar is available on every screen for questions like "why is the single-top sample slower than ttbar?"</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Screen</th><th>Phase</th><th>What it shows</th><th>CopilotKit mechanism</th></tr></thead>
+          <tbody>
+            <tr><td>Repository and commits</td><td><span class="phase p1">1</span></td><td>Connected GitLab projects, recent commits with their input-check results, and a "Start production" action on a chosen commit</td><td>Plain view; check results streamed from agent state</td></tr>
+            <tr><td>Request composer</td><td><span class="phase p2">2</span></td><td>Chat on one side, the structured request filling in on the other</td><td>Shared agent state (<code>useCoAgent</code>), frontend actions to update form fields</td></tr>
+            <tr><td>Config review</td><td><span class="phase p2">2</span></td><td>YAML editor with diff, per-block rationale, approve or revise</td><td>Graph interrupt rendered as a review panel (<code>useLangGraphInterrupt</code>)</td></tr>
+            <tr><td>Sample manifest</td><td><span class="phase p1">1</span></td><td>Table of samples with replica status and the cost estimate</td><td>Interrupt for Gate B; readable context so chat can answer questions about rows</td></tr>
+            <tr><td>Production dashboard</td><td><span class="phase p1">1</span></td><td>Per-sample progress, state counts, throughput against plan, recent events</td><td>Streamed agent state; generative UI for status summaries in chat</td></tr>
+            <tr><td>Intervention inbox</td><td><span class="phase p1">1</span></td><td>Pending approval cards with evidence, history of past decisions</td><td>One card per pending interrupt; answer resumes the graph</td></tr>
+            <tr><td>Audit log</td><td><span class="phase p1">1</span></td><td>Every tool call, approval and state change, filterable by production</td><td>Plain view over Postgres; not agent-driven</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>Approvals can wait hours, since a monitor thread stays paused at its interrupt until someone answers. People will not keep a tab open that long, so pending approvals also need an out-of-app notification (D13).</p>
+      </div>
+    </section>
+
+    <section id="deployment">
+      <h2>Deployment</h2>
+      <div class="prose">
+        <p>The system ships as two container images, a web image and an agent image, plus Postgres. Both images sit behind one hostname, so the browser sees a single origin. That avoids cross-origin configuration and keeps one sign-in session cookie for the whole app.</p>
+      </div>
+
+      <h3>Agent service: FastAPI with LangGraph as a library</h3>
+      <div class="prose">
+        <p>LangGraph is a Python library, so graphs can run inside any process. There are two ways to host them.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Option</th><th>What it provides</th><th>What it costs</th><th>Verdict</th></tr></thead>
+          <tbody>
+            <tr><td>LangGraph Agent Server</td><td>A ready-made HTTP API for threads, runs and streaming, plus scheduled runs, a background task queue and Postgres checkpointing. Extra FastAPI routes can be added through <code>http.app</code> in <code>langgraph.json</code>.</td><td>A standalone production deployment needs Postgres, Redis and a paid LangSmith license. <code>langgraph dev</code> is for local development only. Aegra is a community open-source replacement, but a third-party dependency.</td><td>Reconsider if IRIS-HEP gets LangSmith access</td></tr>
+            <tr><td><strong>Own FastAPI service</strong></td><td>Graphs compiled with the Postgres checkpointer. CopilotKit connects through an AG-UI endpoint mounted with <code>add_langgraph_fastapi_endpoint</code> from <code>ag_ui_langgraph</code>. GitLab webhooks and the REST API live in the same app.</td><td>We write the scheduling of monitor checks ourselves. That scheduling is simple: one short graph run per production every few minutes.</td><td><span class="pill auto">Recommended</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="prose">
+        <p>The agent image runs as two processes that share Postgres, so a slow web request can never hold up a monitor check, and the reverse is also true:</p>
+        <ul>
+          <li><strong>agent-api</strong> serves the AG-UI endpoint, the GitLab webhook and the REST API for the dashboard and audit log. It holds no state of its own, so it can scale to several replicas.</li>
+          <li><strong>agent-worker</strong> runs the scheduled monitor checks and the submission steps. It starts as a single replica, which avoids any need for leader election.</li>
+        </ul>
+        <p>LangGraph Studio and <code>langgraph dev</code> remain available on developers' laptops for debugging graphs, whichever server runs in production.</p>
+      </div>
+
+      <h3>Web app: one Node container</h3>
+      <div class="prose">
+        <p>CopilotKit's React SDK talks to the CopilotKit Runtime, a small Node service that relays to the agent service over AG-UI using <code>LangGraphHttpAgent</code>. So a Node process exists somewhere whichever frontend build is chosen.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Option</th><th>Containers</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Next.js</strong></td><td>One: pages and the runtime at <code>/api/copilotkit</code></td><td>Fewest moving parts. <span class="pill auto">Recommended</span></td></tr>
+            <tr><td>Vite single-page app</td><td>Two: static files (nginx, or served by FastAPI) and a tiny Node runtime (Express or Hono)</td><td>Simpler frontend build, one more service to run</td></tr>
+            <tr><td>SvelteKit (if chosen in D22)</td><td>One: SvelteKit Node server</td><td>Talks to the agent through <code>@ag-ui/client</code>; no CopilotKit runtime</td></tr>
+            <tr><td>GitLab Pages for static files</td><td>Static hosting plus separate API services</td><td>API on another domain means cross-origin calls and cookies across domains. Not recommended.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Topology</h3>
+      <figure>
+        <pre class="code"><span class="c"># one hostname, single sign-on in front (hostname to be decided)</span>
+ingress  &lt;app hostname&gt;
+  /                  → web            Next.js pages
+  /api/copilotkit    → web            CopilotKit runtime → agent-api over AG-UI
+  /agent/*           → agent-api      FastAPI: AG-UI endpoint, REST, audit log
+  /hooks/gitlab      → agent-api      GitLab push webhook (token-checked, no SSO)
+                       agent-worker   same image as agent-api: monitor checks, submissions
+                       postgres       checkpoints, application records, audit log
+
+outbound from agent-api and agent-worker:
+  mcp.af.uchicago.edu/mcp   Rucio, AMI, HTCondor, AF files
+  gitlab.cern.ch API        read files, commit statuses, merge requests (Phase 2)
+  model API                 diagnosis, later authoring (subject to D9)</pre>
+        <figcaption>The webhook path skips single sign-on because GitLab cannot log in; it checks GitLab's secret token header instead. AG-UI streams over long-lived HTTP responses, so the ingress needs response buffering turned off and generous read timeouts on <code>/api/copilotkit</code> and <code>/agent/*</code>.</figcaption>
+      </figure>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3>Environments</h3>
+          <ul>
+            <li><strong>Local:</strong> Docker Compose with Postgres, the agent image and the web app. A stub MCP server replays recorded job histories, so monitor work needs no facility access.</li>
+            <li><strong>Staging:</strong> its own namespace on the hosting cluster, a test GitLab project, and the real MCP gateway with a test account.</li>
+            <li><strong>Production:</strong> its own namespace, with Postgres backed up and the audit log retained per D19.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Build and release</h3>
+          <ul>
+            <li>GitLab CI builds both images on every merge and pushes them to the project's container registry</li>
+            <li>Tagged releases deploy to production; the default branch deploys to staging</li>
+            <li>Deployment tooling (Helm, Kustomize or Argo CD) is decision D28</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Secrets</h3>
+          <ul>
+            <li>GitLab OAuth application secret and webhook token</li>
+            <li>Model API key</li>
+            <li>Per-user MCP and GitLab tokens, encrypted at rest in Postgres, if D1 and D25 settle on stored user tokens</li>
+            <li>All held as Kubernetes secrets, never in images or repositories</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="data">
+      <h2>Data model</h2>
+      <div class="prose"><p>Application records live in Postgres next to the LangGraph checkpoints. The checkpoint is the agent's working memory; these tables are the system of record that the UI and audit log read.</p></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Entity</th><th>Key fields</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Request</td><td>owner, GitLab project, ref, commit SHA, status; prose and structured fields in Phase 2</td><td>One per physicist ask</td></tr>
+            <tr><td>ConfigVersion</td><td>request, commit SHA and file path, YAML text, TCT tag, source (committed or drafted), merge request and skill SHA if drafted, approved by/at</td><td>Immutable; edits create a new version</td></tr>
+            <tr><td>SampleManifest</td><td>config version, rows (DSID, campaign, container, files, events)</td><td>Frozen at Gate B</td></tr>
+            <tr><td>Production</td><td>manifest, caps (jobs, core-hours), state, LangGraph thread id</td><td>The unit the monitor watches</td></tr>
+            <tr><td>JobCluster</td><td>production, manifest row, HTCondor ClusterId, submit hash</td><td>One per DSID and campaign</td></tr>
+            <tr><td>Incident</td><td>production, rule fired, evidence, diagnosis</td><td>Created when detection fires</td></tr>
+            <tr><td>Intervention</td><td>incident, catalogue type, parameters, status, result</td><td>Proposed, approved, rejected, executed, verified</td></tr>
+            <tr><td>Approval</td><td>gate or intervention, decided by, decision, edits, timestamp</td><td>Never deleted</td></tr>
+            <tr><td>AuditEvent</td><td>actor (user or agent), tool, arguments, outcome</td><td>Every MCP call is logged</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="safety">
+      <h2>Safety and trust</h2>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Guardrails</h3>
+          <ul>
+            <li>Typed intervention catalogue; no free-form shell or <code>condor_*</code> commands from the model</li>
+            <li>Per-production caps on jobs, core-hours and output size, enforced in code</li>
+            <li>A kill switch per production and a global one for operators</li>
+            <li>Write tools available only to the execution node, never to the diagnosis node</li>
+            <li>Approvals expire if the underlying state has changed since the card was created</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Untrusted input</h3>
+          <ul>
+            <li>Job stdout and stderr, file names, dataset metadata, and YAML comments and commit messages from GitLab are data, not instructions. They are passed to the model inside clearly delimited evidence blocks.</li>
+            <li>Nothing read from a log can widen the agent's permissions or skip an approval, because policy checks run in code after the model responds.</li>
+            <li>Log excerpts are truncated and summarised before reaching the model, to limit both cost and injection surface.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Accountability</h3>
+          <ul>
+            <li>Every MCP call runs as the requesting user through the broker, so facility logs show who acted</li>
+            <li>The audit log records which model and skill version produced each proposal</li>
+            <li>Provenance is written next to the outputs for later reproduction, keyed by GitLab project and commit SHA</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="eval">
+      <h2>Evaluation</h2>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Monitoring <span class="phase p1">Phase 1</span></h3>
+          <ul>
+            <li>Recorded job histories replayed through the graph: held for memory, proxy expiry, bad replica, slow site, a corrupt input file</li>
+            <li>Metrics: time to detection, correct diagnosis rate, false alarm rate, approval acceptance rate</li>
+            <li>Shadow mode in production first: the agent proposes, nobody acts, and operators compare its proposals with what they actually did</li>
+            <li>Phase 1 users bring productions they would run anyway, which gives realistic failure data early</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Config authoring <span class="phase p2">Phase 2</span></h3>
+          <ul>
+            <li>A golden set of requests paired with reviewed YAML. The configs committed during Phase 1 are a natural source, with history showing how each one was fixed.</li>
+            <li>Pass criteria: deterministic checks pass, and a 1,000-event local run succeeds</li>
+            <li>Metric: share of drafts approved at Gate A with no edits, and median edits per draft</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="plan">
+      <h2>Delivery plan</h2>
+      <div class="prose"><p>Phase 1 ends with a pilot of the monitor on real productions. Its uploaded configs, replica lists and incident history then feed the Phase 2 work.</p></div>
+      <div class="milestones">
+        <div class="ms-phase">Phase 1 · Monitor first</div>
+        <div class="ms"><span class="ms-id">M0 · Spike</span><h3>Confirm the platform</h3><p>List the actual HTCondor tools on <code>atlas-af</code>, test credential delegation for a long-running agent, submit one hand-written TCT job through MCP and read its log back, and receive a webhook from a test GitLab project.</p><p class="exit"><strong>Exit:</strong> D1, D2, D3, D9 and D25 decided.</p></div>
+        <div class="ms"><span class="ms-id">M1 · Bring your own inputs</span><h3>Upload, check, test, launch</h3><p>Connect a GitLab project, read <code>reco.yaml</code> and <code>samples.yaml</code> at a chosen commit, post commit statuses, deterministic input checks, manifest, Gate B with cost estimate, test job, Gate C, full submission. A minimal dashboard shows job states. Monitoring is still manual.</p><p class="exit"><strong>Exit:</strong> one real production started from a GitLab commit and delivered.</p></div>
+        <div class="ms"><span class="ms-id">M2 · Read-only monitor</span><h3>Detect and explain</h3><p>Monitor graph in shadow mode: detection rules, model diagnosis and proposed approval cards, with no execution.</p><p class="exit"><strong>Exit:</strong> false alarm rate and diagnosis accuracy acceptable on replays and live runs.</p></div>
+        <div class="ms"><span class="ms-id">M3 · Approved actions</span><h3>Turn on interventions</h3><p>Execution node, approval cards that resume the graph, verification, notifications. Low-risk catalogue entries first.</p><p class="exit"><strong>Exit:</strong> interventions executed safely on real productions.</p></div>
+        <div class="ms"><span class="ms-id">M4 · Monitor pilot</span><h3>Pilot Phase 1</h3><p>Onboard a small group of analysers who bring their own configs. Add the audit view, the operator kill switch and user documentation.</p><p class="exit"><strong>Exit:</strong> go or no-go for Phase 1 availability, and a set of real analysis repositories to learn from in Phase 2.</p></div>
+        <div class="ms-phase">Phase 2 · Agentic front end</div>
+        <div class="ms"><span class="ms-id">M5 · Config authoring</span><h3>Request to validated YAML</h3><p>Authoring graph with the TCT skill, request composer, config review and Gate A. Drafted configs arrive as merge requests and flow into the existing input checks once merged.</p><p class="exit"><strong>Exit:</strong> golden-set pass rate agreed with physicists.</p></div>
+        <div class="ms"><span class="ms-id">M6 · Sample discovery</span><h3>Find the data</h3><p>Rucio and AMI discovery opens a merge request with <code>samples.yaml</code>. Completion checks gain AMI event totals.</p><p class="exit"><strong>Exit:</strong> discovered sample lists match hand-built lists on the pilot analyses.</p></div>
+        <div class="ms"><span class="ms-id">M7 · Full workflow pilot</span><h3>End to end from a request</h3><p>Pilot users start from a plain-language request. Group sharing of productions, if wanted (D17).</p><p class="exit"><strong>Exit:</strong> go or no-go for wider availability.</p></div>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <div class="dec-intro">
+        <div class="eyebrow" style="color:var(--gate)">Needs input</div>
+        <h2>Decisions needed</h2>
+        <div class="prose"><p>Each decision lists the options, a current leaning with the reason, and the milestone by which it must be settled. Items with an amber edge block M0 and should be resolved first.</p></div>
+        <div class="chips" role="group" aria-label="Filter decisions by area" id="chips"></div>
+      </div>
+      <div class="decisions" id="decisions-list">
+
+        <article class="dec blocker" data-area="Identity and security">
+          <div class="id">D1</div>
+          <div class="main">
+            <div class="top"><h3>Whose identity does the agent act under?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
+            <p class="q">The monitor runs for days, longer than a browser OAuth session. It needs to call the MCP gateway as the user throughout.</p>
+            <p class="opts">Options: per-user OAuth with refresh tokens stored by the agent service · user-issued Personal Access Token from the MCP portal · a facility service account with jobs tagged by user.</p>
+            <p class="lean"><strong>Leaning:</strong> per-user delegated OAuth through the broker, with PATs as a fallback. A service account breaks per-user accounting and quota and needs facility sign-off.</p>
+          </div>
+        </article>
+
+        <article class="dec blocker" data-area="Compute and data">
+          <div class="id">D2</div>
+          <div class="main">
+            <div class="top"><h3>How do we reach HTCondor?</h3><span class="area">Compute and data</span><span class="when">by M0</span></div>
+            <p class="q">The <code>atlas-af</code> gateway lists HTCondor as a backend, but its documented tool names cover identity, Rucio, AMI, JupyterLab and files. We need submit, query, history, edit, release, remove and log access.</p>
+            <p class="opts">Options: use the gateway's HTCondor tools as they are · contribute the missing tools to the gateway · run our own small MCP server on a submit host using the HTCondor Python bindings.</p>
+            <p class="lean"><strong>Leaning:</strong> gateway first, contributing missing tools upstream. Running our own server duplicates the credential broker, which is the hardest part.</p>
+          </div>
+        </article>
+
+        <article class="dec blocker" data-area="Compute and data">
+          <div class="id">D3</div>
+          <div class="main">
+            <div class="top"><h3>Where is TopCPToolkit built?</h3><span class="area">Compute and data</span><span class="when">by M0</span></div>
+            <p class="q">TCT is compiled from source against AnalysisBase 25.2.x. Jobs need a ready build.</p>
+            <p class="opts">Options: a container image per TCT release tag, built in CI · a build in the user's <code>$HOME</code> per production · compile inside each job.</p>
+            <p class="lean"><strong>Leaning:</strong> one image per release tag, published where AF workers can read it. It is reproducible and avoids per-job compile time. Custom algorithms would later need an overlay image.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D4</div>
+          <div class="main">
+            <div class="top"><h3>Which TCT features does the authoring agent support?</h3><span class="area">Agent design</span><span class="when">by M5</span></div>
+            <p class="q">Phase 1 runs whatever valid YAML the user uploads, as long as it needs no custom code beyond the standard TCT image. This decision is about what the Phase 2 agent can draft, which drives the golden set.</p>
+            <p class="opts">Options: detector level only · detector plus particle level · all three levels including parton history · plus custom C++ algorithms.</p>
+            <p class="lean"><strong>Leaning:</strong> detector and particle level, standard blocks only. Parton history and custom code come after the Phase 2 pilot.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D5</div>
+          <div class="main">
+            <div class="top"><h3>Is UChicago HTCondor the only execution backend?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="q">Large productions may be better suited to the grid via PanDA, which TCT supports with <code>submitToGrid.py</code>.</p>
+            <p class="opts">Options: UChicago AF only · AF plus PanDA from the start · AF now, a pluggable backend interface for later.</p>
+            <p class="lean"><strong>Leaning:</strong> AF only, with a backend interface kept in mind. The UChicago gateway makes AF the fastest path.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D6</div>
+          <div class="main">
+            <div class="top"><h3>How do jobs read their inputs?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="opts">Options: stream through XCache (<code>root://</code>) · replicate to <code>MWT2_UC_LOCALGROUPDISK</code> with a Rucio rule first · a mix decided per sample.</p>
+            <p class="lean"><strong>Leaning:</strong> XCache by default. Replication is an approved intervention for samples with poor replica availability, since it uses shared group quota.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D7</div>
+          <div class="main">
+            <div class="top"><h3>Where do outputs go, and are they merged?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="opts">Options: <code>/data/&lt;user&gt;</code> (5 TB, not backed up) · registered in Rucio on LOCALGROUPDISK · object storage. Also: keep one file per job, or merge per sample with <code>hadd</code>.</p>
+            <p class="lean"><strong>Leaning:</strong> <code>/data/&lt;user&gt;</code> with a fixed directory convention, no merging in v1. Rucio registration is worth adding once outputs are shared within a group.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D8</div>
+          <div class="main">
+            <div class="top"><h3>How is the TCT skill loaded inside LangGraph?</h3><span class="area">Agent design</span><span class="when">by M5</span></div>
+            <p class="q">Agent skills are designed for Claude Code and the Claude Agent SDK, which load them on demand. LangGraph does not do this natively.</p>
+            <p class="opts">Options: run a Claude Agent SDK sub-agent inside the authoring node, which loads skills natively · use the Claude API's skills support · read <code>SKILL.md</code> and its references into the prompt ourselves.</p>
+            <p class="lean"><strong>Leaning:</strong> Agent SDK sub-agent for authoring, pinned to a marketplace git SHA. It keeps progressive loading of the reference files and stays in sync with upstream.</p>
+          </div>
+        </article>
+
+        <article class="dec blocker" data-area="Identity and security">
+          <div class="id">D9</div>
+          <div class="main">
+            <div class="top"><h3>May ATLAS metadata and logs go to a hosted model API?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
+            <p class="q">Dataset names, configs and job logs would be sent to the model provider. ATLAS data-handling policy may restrict this.</p>
+            <p class="opts">Options: hosted Claude API under an institutional agreement · Claude through a cloud provider with a data-residency commitment · a self-hosted open model for some or all stages.</p>
+            <p class="lean"><strong>Leaning:</strong> confirm with ATLAS computing coordination before the monitor starts sending job logs to a model in M2. The architecture keeps the model behind one interface so the choice can change.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D10</div>
+          <div class="main">
+            <div class="top"><h3>Which models for which stages, and at what budget?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
+            <p class="opts">Options: one strong model everywhere · a strong model for authoring and diagnosis, a small fast model for log triage and summaries.</p>
+            <p class="lean"><strong>Leaning:</strong> tiered. In Phase 1 the only model use is monitor diagnosis. Most checks never call a model at all; those that do mostly need summarising. Set a per-production token budget alongside the core-hour cap.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Operations">
+          <div class="id">D11</div>
+          <div class="main">
+            <div class="top"><h3>Where do the agent service and web app run?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
+            <p class="opts">Options for where: AF Kubernetes at UChicago · CERN's OpenShift platform · an IRIS-HEP or institutional cluster · LangChain's managed cloud. Options for how: LangGraph's Agent Server (standalone production use needs a LangSmith license) · our own FastAPI service with LangGraph as a library and a Postgres checkpointer.</p>
+            <p class="lean"><strong>Leaning:</strong> our own FastAPI service on AF Kubernetes, close to the MCP gateway, as described under Deployment. It needs no license, keeps data on facility infrastructure, and hosts the GitLab webhook and REST API we need anyway. CERN OpenShift is the fallback if AF cannot host services or webhooks cannot reach it.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D12</div>
+          <div class="main">
+            <div class="top"><h3>How does the monitor observe jobs?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
+            <p class="q">AF guidance warns against hammering the schedd with frequent <code>condor_q</code> calls.</p>
+            <p class="opts">Options: periodic queue queries through MCP at a fixed interval · read the HTCondor user job event log through the filesystem tools · facility metrics such as Prometheus, if exposed.</p>
+            <p class="lean"><strong>Leaning:</strong> event log as the primary signal, with a queue query every few minutes to reconcile. Agree an interval with AF operators.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D13</div>
+          <div class="main">
+            <div class="top"><h3>How are people told an approval is waiting?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
+            <p class="opts">Options: in-app only · email · Mattermost or Slack · CERN Notifications. Also: should approvals expire, and what happens when they do?</p>
+            <p class="lean"><strong>Leaning:</strong> in-app plus email, with a chat integration if the pilot group wants one. Approvals expire when the evidence goes stale, and the agent re-proposes on the next check.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D14</div>
+          <div class="main">
+            <div class="top"><h3>Who may approve?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
+            <p class="opts">Options: only the requester · the requester or named delegates · anyone in the analysis group · conveners for high-risk actions such as group-quota replication.</p>
+            <p class="lean"><strong>Leaning:</strong> requester plus named delegates, so a production is not stuck while one person travels. High-risk actions may need a second approver.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D15</div>
+          <div class="main">
+            <div class="top"><h3>How much may the agent do without asking?</h3><span class="area">Agent design</span><span class="when">by M3</span></div>
+            <p class="opts">Options: nothing, every action needs approval · a single identical retry of failed jobs is automatic · a per-user setting that widens the automatic set over time.</p>
+            <p class="lean"><strong>Leaning:</strong> one automatic identical retry, everything else approved. Revisit after the pilot with acceptance-rate data.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D16</div>
+          <div class="main">
+            <div class="top"><h3>Is a test job mandatory before every launch?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="opts">Options: always · only for new or changed configs · user's choice.</p>
+            <p class="lean"><strong>Leaning:</strong> always for a new config version; skippable when rerunning an already-validated config on new samples of the same type.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D17</div>
+          <div class="main">
+            <div class="top"><h3>Single user or multi-user from the start?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="opts">Options: one physicist's tool first · multi-user with per-user isolation · group workspaces where productions are shared.</p>
+            <p class="lean"><strong>Leaning:</strong> design the data model for multiple users from day one, but pilot with a handful of people. Group sharing waits for M7.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Identity and security">
+          <div class="id">D18</div>
+          <div class="main">
+            <div class="top"><h3>How do people sign in to the web app?</h3><span class="area">Identity and security</span><span class="when">by M1</span></div>
+            <p class="opts">Options: CERN SSO · CILogon · the AF's existing login · reuse the MCP portal's identity directly.</p>
+            <p class="lean"><strong>Leaning:</strong> whatever identity the MCP broker uses, so one login covers both the app and the delegated MCP session. If that is CERN SSO, it also matches gitlab.cern.ch accounts. Depends on D1.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Operations">
+          <div class="id">D19</div>
+          <div class="main">
+            <div class="top"><h3>What provenance is recorded, and where?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
+            <p class="opts">Options: a JSON file next to the outputs · in the app database only · attached as Rucio metadata when outputs are registered.</p>
+            <p class="lean"><strong>Leaning:</strong> JSON next to the outputs and a copy in the database, holding the GitLab project and commit SHA, TCT tag, AnalysisBase release, sample list, model IDs and approvals, plus the skill SHA once configs are drafted in Phase 2.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D20</div>
+          <div class="main">
+            <div class="top"><h3>When does a production count as done?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
+            <p class="q">Some files may never succeed, for example a corrupt input.</p>
+            <p class="opts">Options: require 100% of files · accept a threshold such as 99.5% with an explicit exclusion list · always ask the requester.</p>
+            <p class="lean"><strong>Leaning:</strong> the agent proposes completion with an exclusion list and the normalisation impact; the requester approves. No silent partial deliveries.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Operations">
+          <div class="id">D21</div>
+          <div class="main">
+            <div class="top"><h3>Where does the project live and who maintains it?</h3><span class="area">Operations</span><span class="when">by M4</span></div>
+            <p class="opts">Options: an IRIS-HEP repository · under usatlas alongside the marketplace · split, with improvements to the skill and gateway contributed upstream.</p>
+            <p class="lean"><strong>Leaning:</strong> application in an IRIS-HEP repository; skill fixes and new HTCondor tools contributed to the usatlas marketplace and the AF gateway.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D22</div>
+          <div class="main">
+            <div class="top"><h3>Which frontend framework?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="q">CopilotKit's first-class SDKs are React and Angular. The hooks this design relies on (<code>useCoAgent</code>, <code>useLangGraphInterrupt</code>) and the prebuilt chat UI are React components. Svelte and Vue have community adapters only. The CopilotKit runtime and the AG-UI protocol work with any frontend.</p>
+            <p class="opts">Options: React with Next.js · React with Vite (no server rendering needed) · SvelteKit talking AG-UI directly through the framework-agnostic <code>@ag-ui/client</code>, building our own chat panel and approval cards · Angular.</p>
+            <p class="lean"><strong>Leaning:</strong> React, because CopilotKit's interrupt and shared-state features come ready-made. Next.js itself is not required. SvelteKit is viable if the team's Svelte experience outweighs rebuilding the chat and interrupt UI, which adds frontend work to M1 and M3. With Next.js the CopilotKit runtime lives in the same container as the pages; a Vite build needs a separate small Node runtime container.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D23</div>
+          <div class="main">
+            <div class="top"><h3>What format does the replica list take?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="q">Phase 1 depends on users supplying their inputs. The format decides how much the system can check, and whether Phase 2 discovery can produce it directly.</p>
+            <p class="opts">Options: TCT-style <code>inputs.txt</code> files, one per sample, with one file path or <code>root://</code> URL per line · a list of Rucio dataset or container names that the system expands read-only · a small YAML manifest with sample name, DSID, campaign and either names or file paths per row.</p>
+            <p class="lean"><strong>Leaning:</strong> the YAML manifest, with Rucio names preferred over raw paths. Names let the system pick XCache paths, check completeness and read event counts. Raw paths are accepted as a fallback, with DSID and campaign then inferred from file names and confirmed by the user. It is committed as <code>samples.yaml</code>, and Phase 2 discovery would emit the same file.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D24</div>
+          <div class="main">
+            <div class="top"><h3>What starts a production from GitLab?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="q">Starting a production spends many core-hours, so it should be a deliberate act, not a side effect of every push.</p>
+            <p class="opts">Options: every push to a watched branch · merging to the default branch · pushing a tag that matches a pattern such as <code>prod/*</code> · choosing a commit in the web app.</p>
+            <p class="lean"><strong>Leaning:</strong> a tag or a web-app choice, both leading to Gate B. Plain pushes only run input checks and report a commit status.</p>
+          </div>
+        </article>
+
+        <article class="dec blocker" data-area="Identity and security">
+          <div class="id">D25</div>
+          <div class="main">
+            <div class="top"><h3>Which GitLab, and how does the service connect to it?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
+            <p class="q">The service needs to read repositories, post commit statuses, and in Phase 2 push branches and open merge requests. Webhooks also need a network path from GitLab to the agent service.</p>
+            <p class="opts">Options for the instance: gitlab.cern.ch, where TopCPToolkit itself lives · an institutional GitLab. Options for access: a project access token each analysis adds · a GitLab OAuth application acting as the user · a bot account added to projects. Options for notifications: webhooks · polling · both.</p>
+            <p class="lean"><strong>Leaning:</strong> gitlab.cern.ch with OAuth acting as the user, so commit statuses and merge requests are attributed to them. Webhooks with polling as a fallback, since the network path from CERN to AF Kubernetes needs confirming.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D26</div>
+          <div class="main">
+            <div class="top"><h3>Where do the input checks run?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="opts">Options: all in the agent service · all in GitLab CI · split, with cheap checks in CI and Rucio resolution in the agent service.</p>
+            <p class="lean"><strong>Leaning:</strong> split. A CI template gives instant feedback on YAML and manifest errors in the merge request. Rucio resolution stays in the agent service because it needs the MCP broker's per-user credentials, which CI runners do not have.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D27</div>
+          <div class="main">
+            <div class="top"><h3>In Phase 2, is Gate A a GitLab merge request approval?</h3><span class="area">Product and UX</span><span class="when">by M5</span></div>
+            <p class="opts">Options: review and approve in the web app, which then commits · approve the merge request in GitLab, mirrored in the web app · either, kept in sync.</p>
+            <p class="lean"><strong>Leaning:</strong> the merge request is the record of approval, with the web app showing the agent's rationale next to the diff. Physicists already review configs this way.</p>
+          </div>
+        </article>
+        <article class="dec" data-area="Operations">
+          <div class="id">D28</div>
+          <div class="main">
+            <div class="top"><h3>How are releases deployed?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
+            <p class="opts">Options: a Helm chart applied from GitLab CI · Kustomize overlays applied from GitLab CI · Argo CD or Flux syncing from a deployment repository · whatever the hosting cluster's operators already use.</p>
+            <p class="lean"><strong>Leaning:</strong> follow the hosting cluster's existing practice. If there is none, a Helm chart deployed from GitLab CI, which keeps the number of new tools small.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="confirm">
+      <h2>Questions for UChicago AF</h2>
+      <div class="prose"><p>Several decisions depend on facts only the AF team can confirm. These belong on the agenda for a first meeting.</p></div>
+      <div class="panel" style="max-width:820px">
+        <ul>
+          <li>Which HTCondor operations does the <code>atlas-af</code> gateway expose today, and with what names? Can it submit, edit, release, remove, and read job logs?</li>
+          <li>Can the broker mint the x509 proxy that jobs need for XCache and Rucio reads, or must the user keep a proxy in <code>$HOME</code>?</li>
+          <li>Do the Rucio tools expose per-file event counts, so Phase 1 can check completeness without AMI?</li>
+          <li>Does the broker support a long-lived, refreshable delegation suitable for an agent acting over several days?</li>
+          <li>What polling rate and concurrency are acceptable against the schedd and the gateway?</li>
+          <li>May a facility-hosted service run on AF Kubernetes and call the gateway on users' behalf? Is there an ingress with single sign-on, and an existing deployment practice (Helm, Argo CD) we should follow?</li>
+          <li>Is there a preferred place to publish TCT container images that AF workers can read?</li>
+          <li>Are gateway audit logs available to us, to cross-check our own audit trail?</li>
+          <li>Can webhooks from gitlab.cern.ch reach a service on AF Kubernetes, or do we need to poll?</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="sources" class="sources">
+      <h2 style="font-size:1.2rem">Sources</h2>
+      <ul>
+        <li><a href="https://mcpmarket.com/tools/skills/topcptoolkit-atlas-analysis" target="_blank" rel="noopener">TopCPToolkit ATLAS analysis skill on MCP Market</a></li>
+        <li><a href="https://github.com/usatlas/marketplace" target="_blank" rel="noopener">usatlas/marketplace</a>: the <code>topcptoolkit</code> skill and the <code>af-uchicago</code> plugin with the <code>atlas-af</code> MCP server</li>
+        <li><a href="https://mcp-portal.af.uchicago.edu/" target="_blank" rel="noopener">UChicago AF MCP Platform portal</a></li>
+        <li><a href="https://usatlas.github.io/af-docs/uchicago/batch/" target="_blank" rel="noopener">UChicago AF batch documentation</a></li>
+        <li><a href="https://glama.ai/mcp/servers/kratsg/rucio-mcp" target="_blank" rel="noopener">rucio-mcp</a>, the Rucio MCP server behind the <code>rucio-atlas_*</code> tools</li>
+        <li><a href="https://docs.gitlab.com/user/project/integrations/webhooks/" target="_blank" rel="noopener">GitLab webhooks</a> and <a href="https://docs.gitlab.com/api/commits/#set-the-pipeline-status-of-a-commit" target="_blank" rel="noopener">commit status API</a></li>
+        <li><a href="https://docs.langchain.com/langsmith/custom-routes" target="_blank" rel="noopener">LangGraph Agent Server custom routes</a> and <a href="https://docs.langchain.com/langgraph-platform" target="_blank" rel="noopener">deployment options</a></li>
+        <li><a href="https://docs.langchain.com/oss/python/langchain/frontend/integrations/copilotkit" target="_blank" rel="noopener">CopilotKit integration with LangGraph</a></li>
+        <li><a href="https://topcptoolkit.docs.cern.ch/latest/settings/" target="_blank" rel="noopener">TopCPToolkit settings documentation</a></li>
+        <li><a href="https://docs.copilotkit.ai/integrations/langgraph/human-in-the-loop/prebuilt-agents" target="_blank" rel="noopener">CopilotKit LangGraph human-in-the-loop</a> and <a href="https://docs.copilotkit.ai/reference/hooks/useLangGraphInterrupt" target="_blank" rel="noopener">useLangGraphInterrupt</a></li>
+      </ul>
+    </section>
+
+    <footer>Draft for discussion. Tool names and limits were taken from public documentation in October 2026 and should be confirmed during M0.</footer>
+  </main>
+</div>
+
+<script>
+(function () {
+  var list = document.getElementById('decisions-list');
+  var chipsEl = document.getElementById('chips');
+  if (!list || !chipsEl) return;
+  var cards = Array.prototype.slice.call(list.querySelectorAll('.dec'));
+  var areas = ['All'];
+  var counts = { All: cards.length, 'Blocks M0': 0 };
+  cards.forEach(function (c) {
+    var a = c.getAttribute('data-area');
+    if (areas.indexOf(a) === -1) areas.push(a);
+    counts[a] = (counts[a] || 0) + 1;
+    if (c.classList.contains('blocker')) counts['Blocks M0']++;
+  });
+  areas.splice(1, 0, 'Blocks M0');
+  var current = 'All';
+  try { var saved = localStorage.getItem('dec-filter'); if (saved && areas.indexOf(saved) !== -1) current = saved; } catch (e) {}
+
+  function apply() {
+    cards.forEach(function (c) {
+      var show = current === 'All' ||
+        (current === 'Blocks M0' ? c.classList.contains('blocker') : c.getAttribute('data-area') === current);
+      c.hidden = !show;
+    });
+    Array.prototype.forEach.call(chipsEl.children, function (b) {
+      b.setAttribute('aria-pressed', b.dataset.area === current ? 'true' : 'false');
+    });
+  }
+  areas.forEach(function (a) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.dataset.area = a;
+    b.innerHTML = a + '<span class="count">' + counts[a] + '</span>';
+    b.addEventListener('click', function () {
+      current = a;
+      try { localStorage.setItem('dec-filter', a); } catch (e) {}
+      apply();
+    });
+    chipsEl.appendChild(b);
+  });
+  apply();
+})();
+</script>
