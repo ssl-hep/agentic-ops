@@ -1,3 +1,7 @@
+# Local secrets: Kubernetes Secret manifests and env files with tokens
+secrets/
+.env
+
 # Python
 __pycache__/
 *.pyc
