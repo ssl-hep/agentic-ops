@@ -3,6 +3,15 @@ agentic-ops has been deployed.
 Database credentials and connection URI are in Secret "{{ include "agentic-ops.dbSecretName" . }}":
   kubectl -n {{ .Release.Namespace }} get secret {{ include "agentic-ops.dbSecretName" . }} -o jsonpath='{.data.DATABASE_URL}' | base64 -d
 
+GitLab token for reading EWKit ({{ .Values.gitlab.project }}) comes from Secret "{{ .Values.gitlab.existingSecret }}":
+{{- if (lookup "v1" "Secret" .Release.Namespace .Values.gitlab.existingSecret) }}
+  found. After replacing it, restart the backend:
+  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
+{{- else }}
+  NOT FOUND. Create it as described under "GitLab token" in the README, then restart the backend:
+  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
+{{- end }}
+
 Backend health check:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentic-ops.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
   curl http://localhost:{{ .Values.backend.service.port }}/healthz

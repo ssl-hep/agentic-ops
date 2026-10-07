@@ -37,6 +37,16 @@ spec:
                   name: {{ include "agentic-ops.dbSecretName" $ }}
                   key: {{ $key }}
             {{- end }}
+            - name: GITLAB_URL
+              value: {{ .Values.gitlab.url | quote }}
+            - name: GITLAB_PROJECT
+              value: {{ .Values.gitlab.project | quote }}
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gitlab.existingSecret }}
+                  key: {{ .Values.gitlab.tokenKey }}
+                  optional: true
           readinessProbe:
             httpGet:
               path: /healthz

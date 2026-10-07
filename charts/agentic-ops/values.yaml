@@ -9,6 +9,15 @@ database:
   ## Superuser (postgres) password. Leave empty to auto-generate.
   superuserPassword: ""
 
+## EWKit on GitLab, read by the backend's campaign browser. The token is not part of
+## the chart: create the Secret yourself (see "GitLab token" in the README). Without it
+## the backend still starts, and the UI explains what is missing.
+gitlab:
+  url: https://gitlab.cern.ch
+  project: atlas-physics/hmbs/ewk/EWKit
+  existingSecret: agentic-ops-gitlab
+  tokenKey: GITLAB_TOKEN
+
 backend:
   replicaCount: 1
   image:
