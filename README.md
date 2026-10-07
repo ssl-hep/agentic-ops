@@ -29,8 +29,8 @@ TopCPToolkit, which the standard EWKit image lacks; **config only** when it has 
 
 The backend only ever sends GET requests to GitLab. Anything read at a commit SHA is cached
 in memory by that SHA; ref names and image tags are cached for 60 seconds. The browser never
-talks to the backend or GitLab directly: Next.js server components call the backend at
-`BACKEND_URL`.
+talks to the backend or GitLab directly: Next.js server components (and, for run setup, server
+actions) call the backend at `BACKEND_URL`.
 
 Backend API (all take an optional `?ref=` branch, tag or SHA; the default branch otherwise):
 
@@ -44,6 +44,58 @@ Backend API (all take an optional `?ref=` branch, tag or SHA; the default branch
 | `GET /api/ewkit/analyses/{folder}/configs/{name}` | A config file's content |
 
 Interactive docs are at `http://localhost:8000/docs` when the backend runs locally.
+
+## Run setup
+
+The second screen (stages 2–3 of the run lifecycle in the design proposal). Start it with
+**Set up a run** on a runnable analysis, or from **New run** with a request in plain words such as
+"Run 3 background and data for RadiativeDecays at EFP_v6.6, with systematics". Nothing is
+submitted from here: the result is a checked `RunSpec`, the options a production passes to
+`EWRun.py`, mirroring `EWGridRun.py` (analysis, `--configName`, runs, sample lists,
+`--doSys`/`--noSys`, `--noFilter`, `--noThinning`, `-w`/`--skip` patterns, purpose, memory).
+
+Each setup is one LangGraph thread (`backend/app/agents/graph.py`):
+
+1. **Builder agent** (optional) drafts the `RunSpec` from the request, using read-only tools
+   over the repository connector. It gives a reason for each field, lists its assumptions and
+   asks questions where the request is ambiguous.
+2. **Validator** (code, `backend/app/validator.py`) checks the spec at the pinned commit and
+   returns findings with codes and evidence. It alone decides what passes.
+3. **Reviewer agent** turns the findings into issue cards with evidence and an optional
+   `RunSpec` patch. It sees the request, the spec and the findings, not the builder's reasoning.
+   Code drops cards that cite neither a finding nor a file at the commit, checks every patch
+   against the schema, and dry-runs it through the validator to show what it would clear.
+4. **The person** accepts, edits or dismisses each card, or edits the form directly. Accepted
+   patches and edits go back through the validator and the reviewer. **Spec is ready** is
+   allowed once there are no blocking findings.
+
+The form is the one editor of the spec; the builder only fills it in. Neither agent can write to
+EWKit, edit configs or sample lists, or decide that a check passed. Repository text reaches the
+models only inside `<evidence>` blocks. The model, the prompt versions and every accepted or
+dismissed patch are kept in the setup's history. Without a model endpoint the agents are off,
+and the form and validator work the same way.
+
+Validator finding codes:
+
+| Severity | Codes |
+|----------|-------|
+| blocking | `ANALYSIS_NOT_FOUND`, `FOLDER_NOT_RUNNABLE`, `CONFIG_NOT_FOUND`, `CONFIG_PARSE_ERROR`, `EXTEND_MISSING`, `CONFIG_NEEDS_UNAVAILABLE_MODULES`, `NO_RUNS`, `RUN_NOT_AVAILABLE`, `NO_SAMPLE_LISTS`, `SAMPLE_LIST_NOT_FOUND`, `EMPTY_SELECTION`, `UNKNOWN_RTAG`, `UNRECOGNISED_DATASET`, `INVALID_PATTERN`, `REF_POLICY` (full productions need a tag), `REF_NOT_FOUND` |
+| warning | `SAMPLE_LIST_MISSING_FOR_RUN`, `EMPTY_LIST`, `EXTEND_READONLY_IMAGE`, `NO_IMAGE_FOR_REF`, `MEMORY_OUT_OF_RANGE` |
+| info | `NOT_IN_CI`, `SYSTEMATICS_DEFAULT_ON`, `SYSTEMATICS_OVERRIDDEN`, `IMAGE_UNCHECKED` |
+
+Rucio resolution, the image pull and `EWRun.py -PS` checks come with Gate 1.
+
+Threads are checkpointed in Postgres when `DATABASE_URL` is set (always, in the Helm chart), and
+in memory otherwise, so local setups without a database are lost when the backend restarts.
+
+| Endpoint | Does |
+|----------|------|
+| `GET /api/setups/agents` | Whether the agents are on, and which endpoint and models they use; `?check=true` also calls `GET {base}/models` |
+| `POST /api/setups` | Start a setup from `{ref, analysis, request, spec}` and run it to its first pause |
+| `GET /api/setups/{id}` | The setup: spec, builder notes, findings, issue cards, history |
+| `POST /api/setups/{id}/actions` | `{"action": "apply", "accept": [...], "dismiss": [...]}`, `{"action": "edit", "spec": {...}}`, `{"action": "redraft", "request": "..."}` or `{"action": "finish"}` |
+
+A call that runs the agents can take a minute or two, depending on the model.
 
 ## GitLab token
 
@@ -145,6 +197,97 @@ The design proposal also lists a `read_registry` deploy token for pulling EWKit 
 HTCondor workers. The campaign browser does not need it: it reads image tags and digests
 through the API with the `read_api` token.
 
+## Model endpoint
+
+The run setup agents talk to any **OpenAI-compatible** chat completions endpoint: an
+institutional LLM gateway, a LiteLLM proxy, vLLM, Ollama, or OpenAI itself. They need:
+
+- a **base URL** up to and including `/v1`, e.g. `https://llm.example.org/v1`
+- a **model** name the endpoint serves. It must support **tool (function) calling**, which the
+  agents use both to read the repository and to return structured answers
+- a **token**, sent as `Authorization: Bearer <token>`. Leave it out for endpoints without auth
+
+Request texts, run options, dataset names and config excerpts are sent to this endpoint. Check
+that this is allowed for the service you pick before you use it with EWKit (decision D13 in the
+proposal).
+
+Like the GitLab token, the model token lives in a Kubernetes Secret written to the gitignored
+`secrets/` directory. The base URL and model are not secret and go in the Helm values.
+
+### 1. Check the endpoint works
+
+```bash
+read -r "LLM_BASE_URL?Base URL (ending in /v1): " && read -r "LLM_MODEL?Model: " && read -rs "LLM_API_KEY?Token: "
+```
+
+(That is zsh; in bash use `read -rp "Base URL: " LLM_BASE_URL` and so on, with `-rsp` for the
+token.) List the models the token can use:
+
+```bash
+curl -s "$LLM_BASE_URL/models" -H "Authorization: Bearer $LLM_API_KEY" | python3 -c 'import json,sys; print([m["id"] for m in json.load(sys.stdin)["data"]])'
+```
+
+Then check that the model makes tool calls, the way the agents ask for structured answers:
+
+```bash
+curl -s "$LLM_BASE_URL/chat/completions" -H "Authorization: Bearer $LLM_API_KEY" -H "Content-Type: application/json" -d '{"model": "'"$LLM_MODEL"'", "messages": [{"role": "user", "content": "Which EWKit run: Run 3 background for RadiativeDecays"}], "tools": [{"type": "function", "function": {"name": "RunSpec", "parameters": {"type": "object", "properties": {"analysis": {"type": "string"}, "runs": {"type": "array", "items": {"type": "string"}}}, "required": ["analysis", "runs"]}}}], "tool_choice": {"type": "function", "function": {"name": "RunSpec"}}}' | python3 -c 'import json,sys; m=json.load(sys.stdin)["choices"][0]["message"]; print(m.get("tool_calls") or "NO TOOL CALL: " + str(m.get("content")))'
+```
+
+This should print a `RunSpec` tool call. If the endpoint rejects the named `tool_choice`, set
+`llm.structuredOutput` to `json_schema` (OpenAI-style structured outputs) or `json_mode`.
+
+### 2. Write the Secret manifest
+
+```bash
+mkdir -p secrets && chmod 700 secrets
+```
+
+```bash
+printf %s "$LLM_API_KEY" | kubectl create secret generic agentic-ops-llm --namespace agentic-ops --from-file=LLM_API_KEY=/dev/stdin --dry-run=client -o yaml > secrets/agentic-ops-llm.yaml && chmod 600 secrets/agentic-ops-llm.yaml
+```
+
+```bash
+unset LLM_API_KEY
+```
+
+### 3. Install it and point the chart at the endpoint
+
+```bash
+kubectl apply -f secrets/agentic-ops-llm.yaml
+```
+
+```bash
+helm upgrade agentic-ops charts/agentic-ops -n agentic-ops --reuse-values --set llm.baseUrl="$LLM_BASE_URL" --set llm.model="$LLM_MODEL"
+```
+
+The backend reads the token from Secret `agentic-ops-llm`, key `LLM_API_KEY` (set by
+`llm.existingSecret` and `llm.tokenKey`). The reference is optional, so the backend starts
+without it. Changing `llm.*` values rolls the backend by itself; after adding or replacing only
+the Secret, restart it:
+
+```bash
+kubectl -n agentic-ops rollout restart deployment/agentic-ops-backend
+```
+
+Other settings under `llm:` in `values.yaml`: `builderModel` and `reviewerModel` (per-agent
+overrides of `model`), `structuredOutput`, `temperature`, `timeoutSeconds` and `maxToolCalls`.
+The New run page shows which endpoint and models are in use and whether `/models` answers.
+
+### Rotating the token
+
+Repeat steps 1–3 with the new token (step 2 overwrites the manifest), restart the backend, then
+revoke the old token.
+
+### Using the endpoint outside the cluster
+
+Put the same settings in `backend/.env` (gitignored):
+
+```
+LLM_BASE_URL=https://llm.example.org/v1
+LLM_MODEL=your-model
+LLM_API_KEY=...
+```
+
 ## Local development
 
 ```bash
@@ -167,6 +310,13 @@ settings come from environment variables or `backend/.env`:
 | `GITLAB_URL` | `https://gitlab.cern.ch` |
 | `GITLAB_PROJECT` | `atlas-physics/hmbs/ewk/EWKit` |
 | `GITLAB_TOKEN` | none; see [GitLab token](#gitlab-token) |
+| `LLM_BASE_URL` | none: run setup agents off; see [Model endpoint](#model-endpoint) |
+| `LLM_MODEL` | none |
+| `LLM_API_KEY` | none |
+| `LLM_BUILDER_MODEL`, `LLM_REVIEWER_MODEL` | `LLM_MODEL` |
+| `LLM_STRUCTURED_OUTPUT` | `function_calling` (or `json_schema`, `json_mode`) |
+| `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOOL_CALLS` | `0`, `120`, `8` |
+| `DATABASE_URL` | none: run setups are kept in memory |
 
 ## Container images
 

@@ -79,6 +79,9 @@ class ConfigInfo(BaseModel):
     # Modules, including ones inherited through Extend, that the standard EWKit image lacks
     unavailable_modules: list[str]
     output_tree: str | None = None
+    # Effective values: the config's own setting, else the nearest one along the Extend chain
+    run_systematics: bool | None = None
+    save_cutbookkeepers: bool | None = None
     parse_error: str | None = None
 
 

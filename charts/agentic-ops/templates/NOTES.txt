@@ -12,6 +12,20 @@ GitLab token for reading EWKit ({{ .Values.gitlab.project }}) comes from Secret 
   kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
 {{- end }}
 
+Model endpoint for the run setup agents:
+{{- if and .Values.llm.baseUrl .Values.llm.model }}
+  {{ .Values.llm.model }} at {{ .Values.llm.baseUrl }}
+{{- else }}
+  NOT SET: the agents are off (the Run setup form and input checks still work).
+  Set llm.baseUrl and llm.model as described under "Model endpoint" in the README.
+{{- end }}
+  API token from Secret "{{ .Values.llm.existingSecret }}":
+{{- if (lookup "v1" "Secret" .Release.Namespace .Values.llm.existingSecret) }} found.
+{{- else }} NOT FOUND (fine for endpoints without auth). See "Model endpoint" in the README.
+{{- end }}
+  After creating or replacing the Secret, restart the backend:
+  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
+
 Backend health check:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentic-ops.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
   curl http://localhost:{{ .Values.backend.service.port }}/healthz

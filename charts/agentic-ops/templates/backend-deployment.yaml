@@ -47,6 +47,38 @@ spec:
                   name: {{ .Values.gitlab.existingSecret }}
                   key: {{ .Values.gitlab.tokenKey }}
                   optional: true
+            {{- with .Values.llm }}
+            {{- if .baseUrl }}
+            - name: LLM_BASE_URL
+              value: {{ .baseUrl | quote }}
+            {{- end }}
+            {{- if .model }}
+            - name: LLM_MODEL
+              value: {{ .model | quote }}
+            {{- end }}
+            {{- if .builderModel }}
+            - name: LLM_BUILDER_MODEL
+              value: {{ .builderModel | quote }}
+            {{- end }}
+            {{- if .reviewerModel }}
+            - name: LLM_REVIEWER_MODEL
+              value: {{ .reviewerModel | quote }}
+            {{- end }}
+            - name: LLM_STRUCTURED_OUTPUT
+              value: {{ .structuredOutput | quote }}
+            - name: LLM_TEMPERATURE
+              value: {{ .temperature | quote }}
+            - name: LLM_TIMEOUT_SECONDS
+              value: {{ .timeoutSeconds | quote }}
+            - name: LLM_MAX_TOOL_CALLS
+              value: {{ .maxToolCalls | quote }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .tokenKey }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /healthz
