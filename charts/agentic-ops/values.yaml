@@ -24,8 +24,8 @@ gitlab:
 ## Run setup form and its input checks still work.
 llm:
   ## Base URL up to and including /v1, e.g. https://llm.example.org/v1
-  baseUrl: ""
-  model: ""
+  baseUrl: "https://lumen.ncsa.illinois.edu/v1"
+  model: "deepseek"
   ## Optional per-agent overrides of model
   builderModel: ""
   reviewerModel: ""

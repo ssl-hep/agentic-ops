@@ -1,4 +1,4 @@
-<title>TopCP Agentic Ops</title>
+<title>EWKit Agentic Ops</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@500;700&family=Red+Hat+Text:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -201,9 +201,12 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
     <ol>
       <li><a href="#summary">Summary</a></li>
       <li><a href="#goals">Goals and scope</a></li>
-      <li><a href="#lifecycle">Request lifecycle</a></li>
+      <li><a href="#ewkit">EWKit at a glance</a></li>
+      <li><a href="#lifecycle">Run lifecycle</a></li>
       <li><a href="#architecture">Architecture</a></li>
       <li><a href="#components">Components</a></li>
+      <li><a href="#setup-agents">Run setup agents</a></li>
+      <li><a href="#gitlab">GitLab access and secrets</a></li>
       <li><a href="#monitor">Monitoring agent</a></li>
       <li><a href="#interventions">Interventions</a></li>
       <li><a href="#webapp">Web app</a></li>
@@ -213,7 +216,7 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
       <li><a href="#eval">Evaluation</a></li>
       <li><a href="#plan">Delivery plan</a></li>
       <li><a href="#decisions" class="gate-link">Decisions needed</a></li>
-      <li><a href="#confirm">Questions for UChicago AF</a></li>
+      <li><a href="#confirm">Open questions</a></li>
       <li><a href="#sources">Sources</a></li>
     </ol>
   </nav>
@@ -221,30 +224,34 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
   <main>
     <header class="doc">
       <div class="eyebrow">IRIS-HEP · Design proposal</div>
-      <h1>TopCP Agentic Ops</h1>
-      <p class="lede">An assistant that runs TopCPToolkit n-tuple productions at the UChicago Analysis Facility, watches the HTCondor jobs, and proposes fixes that a person approves before anything changes. It starts from the config and input list a physicist commits to GitLab, and later learns to write both from a plain-language request.</p>
+      <h1>EWKit Agentic Ops</h1>
+      <p class="lede">A web app that runs EWKit n-tuple productions for the analyses already in the EWKit repository on the UChicago Analysis Facility's HTCondor pool, watches the jobs with a LangGraph agent, and proposes fixes that a person approves before anything changes.</p>
       <div class="meta">
-        <span class="status">Draft v0.4, for discussion</span>
+        <span class="status">Draft v1.1, for discussion</span>
         <span><strong>Updated</strong> 7 October 2026</span>
-        <span><strong>Stage</strong> Pre-implementation, no code yet</span>
-        <span><strong>Changes</strong> v0.2 monitor first, authoring and discovery in Phase 2 · v0.3 inputs arrive as GitLab commits · v0.4 deployment section</span>
+        <span><strong>Based on</strong> EWKit <code>master</code> at <code>17c998c</code></span>
+        <span><strong>Stage</strong> Campaign browser (stage 1) built; run setup next</span>
+      </div>
+      <div class="meta">
+        <span><strong>Changes in v1.1</strong> Adds two run setup agents: one drafts a run specification from a request, the other reviews it against deterministic checks and presents the problems it finds. Neither writes configs or decides that a check passed. Also corrects several EWKit facts found while reviewing its run path (tag images, <code>-PS</code>, CI coverage, tag names). See <a href="#setup-agents">Run setup agents</a>, D28 and D29.</span>
+        <span><strong>Changes in v1.0</strong> Retargeted from TopCPToolkit to EWKit. Analyses come only from EWKit's <code>data/</code> folder. Agent-written configs and sample discovery are out of scope for now. Earlier drafts (v0.1–v0.4) remain in this page's version history.</span>
       </div>
     </header>
 
     <section id="summary">
       <h2>Summary</h2>
       <div class="prose">
-        <p>Producing TopCPToolkit (TCT) n-tuples is routine work that still takes a physicist days: writing and debugging a <code>reco.yaml</code>, finding the right DAOD containers for every DSID and MC campaign, splitting them into HTCondor jobs, and babysitting the queue for held jobs, XRootD read errors and memory overruns.</p>
-        <p>This proposal combines four existing pieces into one supervised workflow:</p>
+        <p>EWKit is the EW SUSY group's package for producing analysis n-tuples with the ATLAS CP algorithms. Every analysis already lives in the repository as a folder under <code>data/</code>, holding a YAML config and lists of DAOD datasets. Today those productions go to the grid through <code>EWGridRun.py</code>, and the analyser monitors and retries PanDA tasks by hand.</p>
+        <p>This proposal adds a supervised way to run the same analyses on the UChicago Analysis Facility. The app connects to the EWKit repository, offers a run for any analysis folder at any branch or tag, checks the inputs, runs a test job, submits to HTCondor, and then monitors the production. Before submission, a builder agent drafts the run's options from a plain-language request and a reviewer agent explains what the input checks found. When something goes wrong during the run, the monitoring agent explains the problem and proposes a fix, which a person approves before it is applied.</p>
+        <p>It combines five pieces:</p>
         <ul>
-          <li><strong>The <code>topcptoolkit</code> agent skill</strong> from the usatlas Claude marketplace, which encodes TCT config blocks, CLI options and known pitfalls. It drafts the YAML (Phase 2).</li>
-          <li><strong>The UChicago AF MCP Platform</strong> (<code>atlas-af</code> at <code>mcp.af.uchicago.edu</code>), a credential-brokered gateway to Rucio, AMI, HTCondor and the AF filesystem. It runs and inspects the jobs, and in Phase 2 also finds the data.</li>
-          <li><strong>LangGraph</strong> for durable, checkpointed agent graphs, one that authors and submits a production and one that monitors it for hours or days.</li>
-          <li><strong>GitLab</strong> as the source of truth for inputs: the physicist's repository holds <code>reco.yaml</code> and the replica list, and the commit SHA becomes the production's identity.</li>
-          <li><strong>CopilotKit</strong> for the web app, which shows live production state and renders the agent's proposed interventions as approval cards.</li>
+          <li><strong>EWKit</strong> on gitlab.cern.ch: the analysis configs, the DAOD lists, the run script <code>EWRun.py</code>, and the container image its CI already builds.</li>
+          <li><strong>The UChicago AF MCP Platform</strong> (<code>atlas-af</code> at <code>mcp.af.uchicago.edu</code>), a credential-brokered gateway to Rucio, AMI, HTCondor and the AF filesystem. It resolves datasets and runs and inspects the jobs.</li>
+          <li><strong>LangGraph</strong> for durable, checkpointed graphs: one that checks and submits a run, one that monitors it for hours or days.</li>
+          <li><strong>A FastAPI service</strong> that hosts those graphs and holds the GitLab credentials needed to read EWKit.</li>
+          <li><strong>CopilotKit</strong> for the web app, which shows live production state and renders proposed interventions as approval cards.</li>
         </ul>
-        <p><strong>The work is split into two phases, monitor first.</strong> In Phase 1 the physicist commits their own <code>reco.yaml</code> and replica list to a GitLab repository, and every production is pinned to a commit. The system checks them, runs a test job, submits the production and monitors it, which puts the hardest and least-proven part (the monitoring agent and its approval loop) in front of users early. Phase 2 adds the agentic front end: drafting the YAML from a plain-language request with the TCT skill, and finding the samples through Rucio and AMI. Phase 2's agents deliver the same files to the same repository as merge requests, so nothing downstream changes.</p>
-        <p>The governing rule is simple: <strong>the model proposes, deterministic code executes, and a person approves</strong> anything that spends compute, writes data, or changes the physics configuration.</p>
+        <p>The governing rule is unchanged: <strong>the model proposes, deterministic code executes, and a person approves</strong> anything that spends compute or writes data. In this revision the app never writes to the EWKit repository, and no model writes or edits configs. The run setup agents only draft and critique a run specification, the options passed to <code>EWRun.py</code>; deterministic code decides whether it is valid, and the person accepts every change.</p>
       </div>
     </section>
 
@@ -254,133 +261,183 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
         <div class="panel">
           <h3>Goals</h3>
           <ul>
-            <li><span class="phase p1">Phase 1</span> Problems in a running production are noticed within minutes, explained in plain language with evidence, and paired with a concrete fix.</li>
-            <li><span class="phase p1">Phase 1</span> No production starts without a passing test job and an approved cost estimate.</li>
-            <li><span class="phase p2">Phase 2</span> A first-time TCT user gets a valid, runnable config and a correct sample list from a one-paragraph request.</li>
-            <li>Every action is attributable to a person and reproducible from recorded provenance (TCT tag, AnalysisBase release, YAML hash, sample list, skill version, model ID).</li>
+            <li>Any runnable analysis folder in EWKit can be produced on the UChicago AF from a few choices in the web app, with no local setup.</li>
+            <li>No production starts without passing input checks, a passing test job and an approved cost estimate.</li>
+            <li>Problems in a running production are noticed within minutes, explained in plain language with evidence, and paired with a concrete fix.</li>
+            <li>Outputs carry the same names EWKit's grid productions use, so downstream tooling keeps working.</li>
+            <li>Every run is reproducible from its EWKit commit, image digest and run options.</li>
           </ul>
         </div>
         <div class="panel">
-          <h3>Out of scope for Phase 1</h3>
+          <h3>Out of scope for now</h3>
           <ul>
-            <li>Drafting <code>reco.yaml</code> from a plain-language request (Phase 2).</li>
-            <li>Finding samples through Rucio and AMI (Phase 2). Phase 1 only checks the replicas the user supplies.</li>
-            <li>Writing custom C++ TCT algorithms or new config blocks.</li>
-            <li>Grid submission through PanDA (<code>submitToGrid.py</code>).</li>
-            <li>Downstream histogramming and fitting (FastFrames, TRExFitter, cabinetry).</li>
+            <li>Creating new analyses, or editing configs and sample lists. Changes go through EWKit merge requests as they do today.</li>
+            <li>Agent-written configs and agent sample discovery, including the TopCPToolkit skill used in earlier drafts.</li>
+            <li>Grid submission through PanDA (<code>EWGridRun.py</code>). See D10.</li>
+            <li>Writing anything back to the EWKit repository. See D7.</li>
             <li>Fully autonomous remediation with no human in the loop.</li>
           </ul>
-          <p class="mono" style="color:var(--muted);font-size:0.8rem">The last four are candidates for after Phase 2. See D4 and D5.</p>
         </div>
       </div>
     </section>
 
-    <section id="lifecycle">
-      <h2>Request lifecycle</h2>
+    <section id="ewkit">
+      <h2>EWKit at a glance</h2>
       <div class="prose">
-        <p>Phase 1 starts from files the physicist commits to a GitLab repository. Phase 2 adds four stages in front that generate those same inputs. Approval gates are where the workflow stops until the requester signs off; interventions during the run add further gates, one per proposed fix.</p>
+        <p>EWKit builds on AnalysisBase 25.2.108 and the central CP algorithms, with a few EW SUSY specific algorithms of its own. It is independent of TopCPToolkit, although its configs use the same CP algorithm YAML blocks. The facts below come from the repository at <code>17c998c</code> and shape most of this design.</p>
       </div>
-      <div class="track">
-        <div class="track-head"><span class="phase p1">Phase 1</span><h3>Config and replicas from GitLab</h3></div>
-        <div class="pipeline">
-          <div class="step"><span class="n">1</span><h3>Commit inputs</h3><p>Push <code>reco.yaml</code>, <code>samples.yaml</code> and <code>production.yaml</code> to GitLab, then start a production from that commit.</p></div>
-          <div class="step"><span class="n">2</span><h3>Check inputs</h3><p>Lint the YAML at that commit, resolve the replica list read-only through Rucio, one manifest row per DSID and campaign.</p></div>
-          <div class="step gate"><span class="n">Gate B</span><h3>Approve plan</h3><p>Manifest, job split, core-hours and output size against the <code>/data</code> quota.</p></div>
-          <div class="step"><span class="n">4</span><h3>Test job</h3><p>One short-queue job per sample type, <code>-e 1000</code>, then automatic output checks.</p></div>
-          <div class="step gate"><span class="n">Gate C</span><h3>Approve launch</h3><p>Test results, branch list and timing extrapolation. Go or revise.</p></div>
-          <div class="step"><span class="n">6</span><h3>Run and monitor</h3><p>Full production on HTCondor. Monitor agent proposes fixes, each one approved separately.</p></div>
-          <div class="step"><span class="n">7</span><h3>Validate and deliver</h3><p>Check trees, CutBookkeepers and event counts, then hand over paths and a provenance record.</p></div>
+      <div class="two-col">
+        <div class="panel">
+          <h3>How a job runs</h3>
+          <ul>
+            <li><code>EWRun.py --analysis &lt;Folder&gt;</code> picks up <code>data/&lt;Folder&gt;/config.yaml</code>; <code>--configName</code> selects another file such as <code>config_sys.yaml</code></li>
+            <li>A config may start with <code>Extend: '../Other/config.yaml'</code> and override only some blocks</li>
+            <li>Run options: <code>--doSys</code>, <code>--noSys</code>, <code>--noFilter</code>, <code>--noThinning</code>, <code>-e</code> for an event limit, and <code>-PS</code> to print the algorithm sequence and branches without processing events. <code>-PS</code> still needs an input file: the run script reads the file's metadata (data or MC, Run 2 or 3, generator) while building the sequence</li>
+            <li><code>EWRunScript.py</code> also changes settings per analysis and per Run 2 or Run 3 at run time, so the YAML alone does not fully describe a job. Jobs must therefore name the folder with <code>--analysis</code></li>
+            <li>An <code>Extend:</code> config is merged into a <code>config_extended.yaml</code> written next to it in the installed <code>data/</code> folder, which may fail when the image is mounted read-only</li>
+            <li>Some configs turn systematics on by default (<code>runSystematics: True</code> in CompressedSleptons, DisplacedTrack, SUSYEWK1L2L), with no <code>_SYS</code> in the output name unless <code>--doSys</code> is given</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>What already exists</h3>
+          <ul>
+            <li>CI builds an RPM and pushes a container image to the project registry, tagged with the ref slug. Its <code>workflow:</code> rules only admit merge request and branch pipelines, so tag pushes appear to get no image; to be confirmed with the maintainers. The image records <code>CI_COMMIT_SHA</code> in its environment, so an image can be matched to a commit</li>
+            <li>CI runs four folders (<code>common</code>, CompressedSleptons, RadiativeDecays, DisplacedTrack) on example DAOD_PHYS ttbar and data files. The other folders are not exercised in CI</li>
+            <li><code>EWGridRun.py</code> submits one PanDA task per dataset and names outputs <code>user.&lt;user&gt;.&lt;analysis&gt;.&lt;DSID&gt;.&lt;sample&gt;.&lt;campaign&gt;.&lt;tag&gt;</code></li>
+            <li>Full productions must come from a clean, pushed tag. <code>vX.Y</code> tags are protected and created by the maintainers, but most recent tags are per analysis, such as <code>EFP_v6.6</code>, <code>EWK1L2L_v6.4</code> and <code>SlepWjetFF_v6.0</code></li>
+            <li><code>get_ntuples.py --checkStatus --retry</code> is today's manual monitoring and retry tool, for PanDA</li>
+            <li><code>CODEOWNERS</code> names the owners of each <code>data/&lt;Folder&gt;/</code></li>
+          </ul>
         </div>
       </div>
-      <div class="track">
-        <div class="track-head"><span class="phase p2">Phase 2</span><h3>Agentic front end</h3><p>The agent's output lands in the same repository as a merge request. Merging it is step 1.</p></div>
-        <div class="pipeline">
-          <div class="step later"><span class="n">2a</span><h3>Request</h3><p>Plain-language ask plus a structured form: samples, objects, selections, systematics.</p></div>
-          <div class="step later"><span class="n">2b</span><h3>Draft config</h3><p>Skill-guided agent writes <code>reco.yaml</code> (and particle/parton YAML if asked) and explains each block.</p></div>
-          <div class="step gate"><span class="n">Gate A</span><h3>Approve config</h3><p>Physicist reviews the YAML and rationale, edits, and approves the merge request.</p></div>
-          <div class="step later"><span class="n">2d</span><h3>Find samples</h3><p>Rucio and AMI lookups write <code>samples.yaml</code> and open a merge request for it.</p></div>
-          <div class="step join"><span class="n">→ 1</span><h3>Merge</h3><p>The merge commit joins the Phase 1 flow.</p></div>
-        </div>
+      <figure>
+        <pre class="code"><span class="c"># an analysis folder, as the app will read it</span>
+data/RadiativeDecays/
+├── config.yaml            <span class="c"># CP algorithm config; may Extend another folder's config</span>
+├── backgrounds.yaml       <span class="c"># which common background groups were used to build the lists</span>
+├── DAODs/
+│   ├── Run2_bkg.txt  Run2_data.txt  Run2_signal.txt
+│   └── Run3_bkg.txt  Run3_data.txt  Run3_signal.txt
+└── ntuples/               <span class="c"># optional: lists of produced n-tuple datasets</span>
+
+<span class="c"># DAODs/Run3_bkg.txt: one Rucio dataset per line, "#" lines name groups</span>
+# Vjets: Z+jets
+mc23_13p6TeV.700786.Sh_2214_Zee_maxHTpTV2_BFilter.deriv.DAOD_PHYS.e8514_s4162_r15540_p7266
+mc23_13p6TeV.700786.Sh_2214_Zee_maxHTpTV2_BFilter.deriv.DAOD_PHYS.e8514_s4159_r15224_p7266</pre>
+        <figcaption>Each line is one DSID in one campaign, and the r-tag identifies the campaign. That matches the rule of one job cluster per DSID and campaign, so the lists can be used as they are.</figcaption>
+      </figure>
+
+      <h3>Analysis folders on <code>master</code></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Folder</th><th>Configs</th><th>Datasets listed (Run 2 / Run 3)</th><th>Status in the app</th></tr></thead>
+          <tbody>
+            <tr><td>2L3L</td><td>config.yaml</td><td class="num">bkg 348 / 309 · data 4 / 3 · sig 3,353 / 3,461</td><td><span class="pill low">Runnable</span> signal lists are named <code>sig</code>, not <code>signal</code></td></tr>
+            <tr><td>CompressedSleptons</td><td>config.yaml, config_sys.yaml</td><td class="num">bkg 327 / 288 · bkg_syst 108 / 108 · data 4 / 3 · signal 525 / 525</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>DiTaus</td><td>config.yaml</td><td class="num">bkg 324 / 288 · data 4 / 3 · signal 786 / 520</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>DiTauStudies</td><td>config.yaml</td><td class="num">bkg 237 / 257 · data 4 / 7 · signal 96 / 0</td><td><span class="pill low">Runnable</span> Run 3 signal list is empty; 38 Run 3 bkg datasets use r-tag <code>r17610</code>, which the campaign map does not know</td></tr>
+            <tr><td>DisplacedTrack</td><td>config.yaml</td><td class="num">bkg 227 / 180 · data 4 / 3 · signal 630 / 630</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>RadiativeDecays</td><td>config.yaml</td><td class="num">bkg 336 / 300 · data 4 / 3 · signal 195 / 195</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>SleptonDijetFF</td><td>config.yaml (extends CompressedSleptons)</td><td class="num">bkg 81 / 66 · data 4 / 3</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>SleptonWjetFF</td><td>config.yaml (extends CompressedSleptons)</td><td class="num">bkg 369 / 318 · data 4 / 3</td><td><span class="pill low">Runnable</span></td></tr>
+            <tr><td>SUSYEWK1L2L</td><td>config.yaml</td><td class="num">bkg 384 / 366 · data 4 / 3 · signal 3,408 / 3,408</td><td><span class="pill med">Blocked</span> EWKit CI notes it needs TopCPToolkit, which the standard image lacks</td></tr>
+            <tr><td>RadiativeCSE</td><td>config.yaml (extends RadiativeDecays)</td><td class="num">none</td><td><span class="pill med">Config only</span> no sample lists</td></tr>
+            <tr><td>RadiativeEFPFakeFactor</td><td>config.yaml (extends RadiativeDecays)</td><td class="num">none</td><td><span class="pill med">Config only</span> no sample lists</td></tr>
+            <tr><td>common</td><td>config.yaml</td><td class="num">shared groups: 24 Run 2, 21 Run 3 files</td><td>Not an analysis. Source of background groups</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div class="legend"><span><span class="swatch g"></span>Human approval required</span><span><span class="swatch"></span>Agent works on its own</span><span><span class="swatch" style="border-style:dashed;background:transparent"></span>Added in Phase 2</span></div>
+      <div class="prose">
+        <p>Counts exclude <code>#</code> group-header lines. Data entries are whole-year physics containers, so a handful of lines still means a large number of files. Most lists are DAOD_PHYS; 2L3L uses DAOD_PHYSLITE and DisplacedTrack uses DAOD_SUSY20. The app discovers folders, configs and sample files by pattern at the chosen commit instead of hard-coding this table. How it treats blocked and config-only folders is D9.</p>
+      </div>
+    </section>
+
+    <section id="lifecycle">
+      <h2>Run lifecycle</h2>
+      <div class="prose">
+        <p>A run goes through eight stages. Two are approval gates where the workflow stops until someone signs off. Interventions during the run add further gates, one per proposed fix.</p>
+      </div>
+      <div class="pipeline">
+        <div class="step"><span class="n">1</span><h3>Choose analysis</h3><p>Pick a folder under <code>data/</code> and a tag, branch or commit of EWKit. The ref is resolved to a commit SHA immediately.</p></div>
+        <div class="step"><span class="n">2</span><h3>Set up the run</h3><p>Config file, Run 2 and/or Run 3, sample lists (bkg, data, signal…), <code>--doSys</code> and other flags, optional include/skip patterns. Filled in by hand or drafted by the builder agent from a request.</p></div>
+        <div class="step"><span class="n">3</span><h3>Check inputs</h3><p>Config and <code>Extend</code> chain, sample lists, Rucio resolution, campaign recognition, image availability. The reviewer agent explains the findings and suggests fixes the person can accept.</p></div>
+        <div class="step gate"><span class="n">Gate 1</span><h3>Approve plan</h3><p>Manifest, job split, core-hours and output size against the <code>/data</code> quota.</p></div>
+        <div class="step"><span class="n">5</span><h3>Test job</h3><p>A short-queue job per Run and sample type with <code>-e 1000</code>, then automatic output checks.</p></div>
+        <div class="step gate"><span class="n">Gate 2</span><h3>Approve launch</h3><p>Test results, branch list and timing extrapolation. Go or revise.</p></div>
+        <div class="step"><span class="n">7</span><h3>Run and monitor</h3><p>Full production on HTCondor. The monitor agent proposes fixes, each approved separately.</p></div>
+        <div class="step"><span class="n">8</span><h3>Validate and deliver</h3><p>Check trees, CutBookkeepers and event counts, then hand over output paths and a provenance record.</p></div>
+      </div>
+      <div class="legend"><span><span class="swatch g"></span>Human approval required</span><span><span class="swatch"></span>Automatic</span></div>
     </section>
 
     <section id="architecture">
       <h2>Architecture</h2>
       <div class="prose">
-        <p>Four runtime pieces plus the physicist's GitLab repository: a React web app with CopilotKit (Next.js assumed; see D22), a CopilotKit runtime that speaks the AG-UI protocol, a Python agent service running the LangGraph graphs (a submission graph and a monitor graph in Phase 1, with authoring steps added in Phase 2), and the existing UChicago MCP gateway. Postgres holds LangGraph checkpoints, application records and the audit log. GitLab notifies the agent service of new commits and receives commit statuses back, and in Phase 2 merge requests.</p>
+        <p>Four runtime pieces: a React web app with CopilotKit, a CopilotKit runtime that speaks the AG-UI protocol, a FastAPI agent service running the LangGraph graphs, and the existing UChicago MCP gateway. Postgres holds LangGraph checkpoints, application records and the audit log. The agent service reads EWKit through the GitLab API with a read-only token, and HTCondor workers pull the EWKit image built by EWKit's own CI.</p>
       </div>
       <figure>
         <div class="figure-box">
-          <svg viewBox="0 0 980 440" role="img" aria-labelledby="arch-title">
-            <title id="arch-title">System architecture: browser, CopilotKit runtime, LangGraph agent service, UChicago MCP gateway and its backends</title>
+          <svg viewBox="0 0 980 452" role="img" aria-labelledby="arch-title">
+            <title id="arch-title">System architecture: browser, CopilotKit runtime, FastAPI agent service, EWKit on GitLab, UChicago MCP gateway and its backends</title>
             <defs>
               <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
               <marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-gate"/></marker>
             </defs>
 
-            <!-- Browser -->
             <rect x="16" y="40" width="190" height="200" rx="10" class="box"/>
             <text x="30" y="64" class="t-title">Physicist's browser</text>
             <text x="30" y="82" class="t-body">React + CopilotKit</text>
-            <text x="30" y="110" class="t-mono">Request composer</text>
-            <text x="30" y="128" class="t-mono">Config review</text>
+            <text x="30" y="110" class="t-mono">Analyses in data/</text>
+            <text x="30" y="128" class="t-mono">Run setup</text>
             <text x="30" y="146" class="t-mono">Sample manifest</text>
             <text x="30" y="164" class="t-mono">Production dashboard</text>
             <rect x="26" y="176" width="170" height="26" rx="6" class="box-gate"/>
             <text x="36" y="193" class="t-mono" style="fill:var(--gate)">Intervention inbox</text>
             <text x="30" y="226" class="t-mono">Audit log</text>
 
-            <!-- GitLab -->
-            <rect x="16" y="300" width="190" height="96" rx="10" class="box-strong"/>
-            <text x="30" y="324" class="t-title">GitLab repository</text>
-            <text x="30" y="344" class="t-mono">reco.yaml</text>
-            <text x="30" y="360" class="t-mono">samples.yaml</text>
-            <text x="30" y="376" class="t-mono">production.yaml</text>
-            <path d="M206 336 L430 300" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
-            <text x="240" y="352" class="t-label">push webhooks in</text>
-            <text x="240" y="366" class="t-label">statuses and MRs out</text>
+            <rect x="16" y="290" width="190" height="122" rx="10" class="box-strong"/>
+            <text x="30" y="314" class="t-title">EWKit · gitlab.cern.ch</text>
+            <text x="30" y="334" class="t-mono">data/&lt;analysis&gt;/</text>
+            <text x="30" y="350" class="t-mono">  config*.yaml</text>
+            <text x="30" y="366" class="t-mono">  DAODs/Run*_*.txt</text>
+            <text x="30" y="386" class="t-mono">CODEOWNERS</text>
+            <text x="30" y="402" class="t-mono">container registry</text>
 
-            <!-- CopilotKit runtime -->
             <rect x="244" y="90" width="150" height="76" rx="10" class="box"/>
             <text x="258" y="116" class="t-title">CopilotKit runtime</text>
-            <text x="258" y="134" class="t-body">Node service</text>
+            <text x="258" y="134" class="t-body">Node, in web container</text>
             <text x="258" y="152" class="t-mono">AG-UI event stream</text>
 
-            <!-- Agent service -->
             <rect x="430" y="20" width="290" height="300" rx="12" class="group"/>
-            <text x="444" y="42" class="t-title">Agent service (Python)</text>
+            <text x="444" y="42" class="t-title">Agent service (FastAPI)</text>
             <rect x="444" y="56" width="262" height="66" rx="8" class="box-strong"/>
-            <text x="456" y="78" class="t-title">Submission graph</text>
-            <text x="456" y="96" class="t-mono">check inputs → plan →</text>
-            <text x="456" y="111" class="t-mono">test job → submit  (+ authoring, P2)</text>
+            <text x="456" y="78" class="t-title">Run graph</text>
+            <text x="456" y="96" class="t-mono">draft → check → review →</text>
+            <text x="456" y="111" class="t-mono">plan → test job → submit</text>
             <rect x="444" y="134" width="262" height="66" rx="8" class="box-strong"/>
             <text x="456" y="156" class="t-title">Monitor graph</text>
             <text x="456" y="174" class="t-mono">observe → detect → diagnose →</text>
             <text x="456" y="189" class="t-mono">propose → interrupt → act</text>
             <rect x="444" y="214" width="126" height="90" rx="8" class="box"/>
-            <text x="456" y="236" class="t-title">TCT skill (P2)</text>
-            <text x="456" y="254" class="t-body">SKILL.md +</text>
-            <text x="456" y="270" class="t-body">references,</text>
-            <text x="456" y="286" class="t-body">pinned to a git SHA</text>
+            <text x="456" y="236" class="t-title">EWKit adapter</text>
+            <text x="456" y="254" class="t-body">folders, Extend,</text>
+            <text x="456" y="270" class="t-body">campaigns,</text>
+            <text x="456" y="286" class="t-body">output names</text>
             <rect x="580" y="214" width="126" height="90" rx="8" class="box"/>
             <text x="592" y="236" class="t-title">Claude models</text>
-            <text x="592" y="254" class="t-body">Diagnosis, later</text>
-            <text x="592" y="270" class="t-body">authoring; cheaper</text>
-            <text x="592" y="286" class="t-body">model for triage</text>
+            <text x="592" y="254" class="t-body">Setup draft, review,</text>
+            <text x="592" y="270" class="t-body">failure diagnosis;</text>
+            <text x="592" y="286" class="t-body">no config writing</text>
 
-            <!-- Postgres -->
             <rect x="430" y="350" width="290" height="62" rx="10" class="box"/>
             <text x="444" y="374" class="t-title">Postgres</text>
-            <text x="444" y="394" class="t-mono">checkpoints · requests · audit</text>
+            <text x="444" y="394" class="t-mono">checkpoints · runs · audit</text>
 
-            <!-- MCP gateway -->
             <rect x="760" y="20" width="204" height="72" rx="10" class="box-strong"/>
             <text x="774" y="44" class="t-title">atlas-af MCP gateway</text>
             <text x="774" y="62" class="t-mono">mcp.af.uchicago.edu/mcp</text>
             <text x="774" y="80" class="t-body">per-call credential broker</text>
 
-            <!-- Backends -->
             <rect x="760" y="116" width="98" height="40" rx="8" class="box"/>
             <text x="772" y="141" class="t-title">Rucio</text>
             <rect x="866" y="116" width="98" height="40" rx="8" class="box"/>
@@ -390,23 +447,24 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
             <rect x="866" y="166" width="98" height="40" rx="8" class="box"/>
             <text x="878" y="191" class="t-title">AF files</text>
 
-            <!-- Workers & storage -->
             <rect x="760" y="236" width="204" height="70" rx="10" class="box"/>
             <text x="774" y="258" class="t-title">Worker nodes</text>
-            <text x="774" y="276" class="t-mono">runTop_el.py in an</text>
-            <text x="774" y="291" class="t-mono">AnalysisBase 25.2 image</text>
+            <text x="774" y="276" class="t-mono">EWRun.py in the EWKit</text>
+            <text x="774" y="291" class="t-mono">image, AB 25.2.108</text>
             <rect x="760" y="330" width="204" height="82" rx="10" class="box"/>
             <text x="774" y="352" class="t-title">Storage</text>
             <text x="774" y="370" class="t-mono">in:  XCache root://</text>
             <text x="774" y="386" class="t-mono">out: /data/&lt;user&gt;</text>
             <text x="774" y="402" class="t-mono">opt: LOCALGROUPDISK</text>
 
-            <!-- Edges -->
             <path d="M206 128 H244" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
             <path d="M394 128 H444" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
             <text x="398" y="118" class="t-label">state</text>
             <path d="M206 189 H444" class="edge-gate" marker-start="url(#ahg)"/>
             <text x="236" y="206" class="t-label" style="fill:var(--gate)">interrupts → approval cards</text>
+            <path d="M430 300 L206 330" class="edge" marker-end="url(#ah)"/>
+            <text x="236" y="276" class="t-label">read-only GitLab API</text>
+            <text x="236" y="290" class="t-label">(project access token)</text>
             <path d="M706 89 H760" class="edge" marker-end="url(#ah)"/>
             <path d="M706 167 C 735 167, 735 70, 760 70" class="edge" marker-end="url(#ah)"/>
             <text x="726" y="62" class="t-label">MCP</text>
@@ -414,9 +472,11 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
             <path d="M809 206 V236" class="edge" marker-end="url(#ah)"/>
             <path d="M862 306 V330" class="edge" marker-end="url(#ah)"/>
             <path d="M575 320 V350" class="edge" marker-start="url(#ah)" marker-end="url(#ah)"/>
+            <path d="M110 412 V430 H740 V271 H760" class="edge" style="stroke-dasharray:4 4" marker-end="url(#ah)"/>
+            <text x="470" y="446" class="t-label">image pull, pinned by digest (D3)</text>
           </svg>
         </div>
-        <figcaption>The agent never holds Rucio, AMI or x509 credentials itself. The MCP gateway mints short-lived per-user credentials on each call, so the open problem is how a long-running monitor keeps a valid user session (decision D1). Boxes marked P2 arrive in Phase 2. GitLab content is read through the GitLab API and is never executed.</figcaption>
+        <figcaption>The agent never holds Rucio, AMI or x509 credentials itself; the MCP gateway mints short-lived per-user credentials on each call (D1). The only long-lived secrets the service holds are the GitLab token and the model API key. Nothing is written back to EWKit.</figcaption>
       </figure>
     </section>
 
@@ -425,82 +485,205 @@ footer { color: var(--muted); font-size: 0.84rem; border-top: 1px solid var(--ru
       <div class="components">
 
         <article class="comp">
-          <div class="comp-head"><h3>Provided inputs and planning</h3><span class="phase p1">Phase 1</span><span class="tag">stages 1–2 · Gate B</span></div>
-          <p>Each analysis keeps its inputs in a GitLab repository. The physicist commits a <code>reco.yaml</code> (plus <code>particle.yaml</code> or <code>parton.yaml</code> if used), a replica list and a small production settings file, then starts a production from a specific commit. The production is pinned to that SHA, so the inputs cannot change underneath a running job. The system builds the sample manifest from the files, with <strong>each job cluster covering exactly one DSID and campaign</strong>. TCT requires this: mixing DSIDs corrupts CutBookkeeper normalisation. No model is involved at this stage; every check is deterministic.</p>
+          <div class="comp-head"><h3>EWKit repository connector</h3><span class="tag">stage 1</span></div>
+          <p>Part of the agent service. It reads EWKit through the GitLab REST API at a specific commit and never clones or executes repository code in the service itself. Everything it reads is cached by commit SHA, since a commit's contents never change.</p>
           <div class="cols">
-            <div><h4>Input checks</h4><ul><li>YAML parses; block names and keys exist in the TCT settings for the chosen release</li><li>Collection names match the input format (<code>AnalysisJets</code> for PHYSLITE, <code>AntiKt4EMPFlowJets</code> for PHYS)</li><li>Cut values look like MeV, not GeV</li><li>Every replica resolves through read-only Rucio calls; missing or unreachable files are listed</li><li>Each sample's files share one DSID and campaign; mixed groups are rejected with an explanation</li></ul></div>
-            <div><h4>Plan estimate shown at Gate B</h4><ul><li>Core-hours, from the test job's events/second, or a calibrated default before the test runs</li><li>Expected output size against the 5 TB <code>/data</code> quota</li><li>Queue choice: short (4 h limit) or long (72 h limit), and whether to allow MWT2 overflow</li><li>Files per job and number of jobs per sample</li></ul></div>
-          </div>
-          <pre class="code"><span class="c"># proposed repository layout (one GitLab project per analysis)</span>
-my-ttbar-ntuples/
-├── production.yaml   <span class="c"># TCT release, queue, output area, who may approve</span>
-├── reco.yaml         <span class="c"># TopCPToolkit config; particle.yaml / parton.yaml optional</span>
-└── samples.yaml      <span class="c"># replica list, one entry per DSID and campaign (D23)</span></pre>
-          <div class="cols">
-            <div><h4>GitLab integration</h4><ul><li>A push webhook tells the agent service about new commits; a periodic poll covers missed webhooks</li><li>Files are read at the exact commit through the GitLab API</li><li>Results go back as commit statuses with a link to the dashboard: input checks, test job, production state</li><li>Optional: the cheap checks (YAML lint, manifest schema) also run as a GitLab CI job the project includes</li></ul></div>
-            <div><h4>What starts a production</h4><ul><li>Commits alone only trigger input checks, so pushing work in progress is safe</li><li>A production starts when the physicist picks a commit in the web app, or pushes a tag matching an agreed pattern (D24)</li><li>A config fix during a run is a new commit, which becomes a new config version with its own test job</li></ul></div>
-          </div>
-          <p style="font-size:0.9rem;color:var(--muted)">Open choices: the replica list format (D23), what triggers a production (D24), how the service connects to GitLab (D25), and where the input checks run (D26).</p>
-        </article>
-
-        <article class="comp later">
-          <div class="comp-head"><h3>Request intake</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2a</span></div>
-          <p>Physicists describe what they want in prose, and a structured form beside the chat fills in as the agent parses it. Either side can be edited. The output is a typed <code>AnalysisRequest</code> that later stages read instead of re-reading the chat.</p>
-          <div class="cols">
-            <div><h4>Captured fields</h4><ul><li>Physics process and samples (DSIDs, or a description the agent resolves)</li><li>Data periods and MC campaigns (e.g. data22–24, mc23a/d/e)</li><li>Input format: <code>DAOD_PHYS</code> or <code>DAOD_PHYSLITE</code>, p-tag</li><li>Objects and working points, b-tagger, triggers</li><li>Event selection regions</li><li>Systematics: full, a named subset, or none</li><li>Analysis levels: detector, particle, parton</li></ul></div>
-            <div><h4>Agent behaviour</h4><ul><li>Asks clarifying questions only for fields that change the output, such as PHYS vs PHYSLITE or the tagger working point</li><li>Offers starting templates, e.g. ttbar lepton+jets or single-top t-channel</li><li>Can start from a <code>reco.yaml</code> already in the analysis repository</li></ul></div>
-          </div>
-        </article>
-
-        <article class="comp later">
-          <div class="comp-head"><h3>Config authoring</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2b · Gate A</span></div>
-          <p>A LangGraph node runs a Claude agent with the <code>topcptoolkit</code> skill loaded. It writes the YAML block by block (<code>CommonServices</code>, <code>Electrons</code>, <code>Muons</code>, <code>Jets</code>, <code>MissingET</code>, <code>OverlapRemoval</code>, <code>EventSelection</code>, <code>Thinning</code>, <code>Output</code>) and attaches a short rationale to each block.</p>
-          <div class="cols">
-            <div><h4>Deterministic checks before Gate A</h4><ul><li>All the Phase 1 YAML checks, reused unchanged</li><li>Cut values look like MeV, not GeV (a 25 in a pT cut is flagged)</li><li>The b-tag decoration in <code>EventSelection</code> matches the tagger and working point in <code>Jets</code></li><li>Every container written in <code>Output</code> is produced upstream</li></ul></div>
-            <div><h4>What the reviewer sees</h4><ul><li>The YAML with an inline diff against the template or imported file</li><li>Per-block rationale that cites the skill's guidance</li><li>Predicted output branches, so they can confirm what will be saved</li><li>Edit in place, ask the agent to revise, or approve</li><li>The approved draft is pushed to a branch and opened as a merge request; merging it hands over to Phase 1 (D27)</li></ul></div>
-          </div>
-        </article>
-
-        <article class="comp later">
-          <div class="comp-head"><h3>Sample discovery</h3><span class="phase p2">Phase 2</span><span class="tag">stage 2d</span></div>
-          <p>The agent resolves the request into concrete containers using <code>ami_*</code> tools (physics parameters, AMI tags, hashtags) and <code>rucio-atlas_*</code> tools (DIDs, file lists, replicas). It writes <code>samples.yaml</code> in the Phase 1 format and opens a merge request. Once merged, it goes through the same input checks and Gate B.</p>
-          <div class="cols">
-            <div><h4>Manifest columns</h4><ul><li>DSID, campaign, container name, p-tag</li><li>Files, events, total size</li><li>Replica availability at MWT2 and through XCache</li><li>Cross-section, k-factor, filter efficiency (from AMI)</li><li>Planned files per job and number of jobs</li></ul></div>
-            <div><h4>What discovery adds over Phase 1</h4><ul><li>Choosing containers from a physics description instead of a list</li><li>Picking the right p-tag and AMI tag for each campaign</li><li>Preferring containers with complete replicas near MWT2</li><li>Pulling AMI totals so completion can be checked against expected event counts</li></ul></div>
+            <div><h4>What it reads</h4><ul><li>Branches and tags, so users can pick a ref; each choice is resolved to a SHA</li><li>The folder list under <code>data/</code>, excluding <code>common</code></li><li>Per folder: <code>config*.yaml</code>, every <code>DAODs/Run*_*.txt</code>, any README, and the folder's <code>CODEOWNERS</code> entry</li><li>The target of each <code>Extend:</code> line, following the chain inside the repository</li><li>Whether CI has published an image for the ref</li></ul></div>
+            <div><h4>How it parses</h4><ul><li>Sample files by pattern, so <code>Run2_sig.txt</code> and <code>Run3_bkg_syst.txt</code> are offered as found</li><li><code>#</code> lines become group headings in the UI (e.g. "Vjets: Z+jets")</li><li>Each dataset name is split into DSID, short name, r-tag, campaign and p-tag</li><li>The r-tag to campaign map matches the one in <code>EWGridRun.py</code>; unknown r-tags are flagged before submission instead of failing mid-run (D27)</li></ul></div>
           </div>
         </article>
 
         <article class="comp">
-          <div class="comp-head"><h3>Build, test and submit</h3><span class="phase p1">Phase 1</span><span class="tag">stages 4–6 · Gate C</span></div>
-          <p>TCT is compiled from source against AnalysisBase 25.2.x. Where that build lives is an open decision (D3); the working assumption is a container image per TCT release tag so that jobs do not compile anything. Submission generates one HTCondor cluster per manifest row, following AF conventions.</p>
-          <pre class="code"><span class="c"># sketch of a generated submit description (illustrative, not final)</span>
-universe                = vanilla
-executable              = run_tct.sh          <span class="c"># wraps runTop_el.py -i inputs_$(ProcId).txt -o out</span>
-+SingularityImage       = "&lt;TCT image for tag vX.Y.Z&gt;"
-+queue                  = "short"             <span class="c"># or long, chosen at Gate B</span>
-+ALLOW_MWT2             = True                <span class="c"># overflow, if approved</span>
-request_cpus            = 1
-request_memory          = 2GB
-use_x509userproxy       = true                <span class="c"># proxy minted by the broker? see D1</span>
-log    = logs/$(ClusterId).log
-output = logs/$(ClusterId).$(ProcId).out
-error  = logs/$(ClusterId).$(ProcId).err
-+AgenticOpsProduction   = "&lt;production id&gt;"   <span class="c"># custom ClassAd for tracking</span>
-queue $(nJobs)</pre>
+          <div class="comp-head"><h3>Run setup and input checks</h3><span class="tag">stages 2–3 · Gate 1</span></div>
+          <p>The run options mirror <code>EWGridRun.py</code> so they are familiar: analysis, <code>--configName</code>, <code>--runs</code>, <code>--samples</code>, <code>--doSys</code>/<code>--noSys</code>, <code>--noFilter</code>, <code>--noThinning</code>, and include/skip patterns. These options are held as a typed <strong>RunSpec</strong>. Every check is deterministic code. The <a href="#setup-agents">run setup agents</a> draft the RunSpec and explain what the checks found, but no model decides whether a check passes.</p>
           <div class="cols">
-            <div><h4>Test job checks</h4><ul><li>Exit code zero and a <code>reco</code> tree present</li><li>CutBookkeeper and <code>listOfSystematics</code> histograms present</li><li>Branch list matches what the <code>Output</code> block asks for</li><li>Events/second and peak memory, used to size the full run</li></ul></div>
-            <div><h4>Submission safeguards</h4><ul><li>Idempotency key per cluster, so a retried submit cannot double-submit</li><li>Hard cap on jobs and core-hours per production, set at Gate B</li><li>Custom ClassAd tag on every job so the monitor can find them</li></ul></div>
+            <div><h4>Input checks</h4><ul><li>The folder is runnable (D9) and the chosen config exists, including its <code>Extend</code> target</li><li>The config parses and builds: <code>EWRun.py -PS</code> in the EWKit image prints the algorithm sequence and output branches without processing events. It needs one real input file for each Run, data or MC, and DAOD format in the run, taken from a small catalogue of test files reachable through XCache</li><li>Each dataset resolves in Rucio (read-only) and has replicas reachable from MWT2 or XCache</li><li>Each dataset's r-tag maps to a known campaign</li><li>An image exists that was built from the resolved commit (its <code>CI_COMMIT_SHA</code> matches) and can be pulled (D3)</li><li>Selected sample lists are not empty, and the ref is allowed for the run size (D4)</li></ul></div>
+            <div><h4>Plan estimate shown at Gate 1</h4><ul><li>Datasets, files, events and input size per Run and sample list</li><li>Core-hours, from the test job's events/second, or a calibrated default before the test runs</li><li>Expected output size against the 5 TB <code>/data</code> quota</li><li>Queue choice: short (4 h limit) or long (72 h limit), and whether to allow MWT2 overflow</li><li>Datasets with missing or incomplete replicas, listed</li></ul></div>
           </div>
         </article>
 
+        <article class="comp">
+          <div class="comp-head"><h3>Test, submit and name outputs</h3><span class="tag">stages 5–7 · Gate 2</span></div>
+          <p>Jobs run <code>EWRun.py</code> inside the image EWKit's CI built for the chosen ref, pinned by digest so a later push to the same branch cannot change a running production. One HTCondor cluster per dataset, matching one PanDA task per dataset in <code>EWGridRun.py</code>.</p>
+          <pre class="code"><span class="c"># sketch of a generated submit description (illustrative, not final)</span>
+universe          = vanilla
+executable        = run_ewkit.sh        <span class="c"># writes in.txt from XCache URLs, runs EWRun.py, copies output</span>
+arguments         = $(ProcId)
++SingularityImage = "&lt;EWKit image for commit, pinned by digest&gt;"   <span class="c"># D3</span>
++queue            = "short"             <span class="c"># or long, chosen at Gate 1</span>
+request_cpus      = 1
+request_memory    = 2GB                 <span class="c"># EWGridRun's default for grid jobs</span>
+use_x509userproxy = true                <span class="c"># proxy minted by the broker? see D1</span>
+log    = logs/$(ClusterId).log
+output = logs/$(ClusterId).$(ProcId).out
+error  = logs/$(ClusterId).$(ProcId).err
++EWKitRun         = "&lt;run id&gt;"          <span class="c"># custom ClassAd so the monitor can find the jobs</span>
+queue $(nJobs)
+
+<span class="c"># inside run_ewkit.sh, for each job</span>
+EWRun.py --analysis RadiativeDecays [--configName config_sys.yaml] [--doSys] \
+         --input-list in.txt --merge-output-files -o output.root</pre>
+          <div class="cols">
+            <div><h4>Test job checks</h4><ul><li>Exit code zero; the output tree named in the config's <code>Output</code> block exists</li><li>CutBookkeepers present when the config saves them (<code>config_sys.yaml</code> turns them off); branch list matches what <code>-PS</code> printed</li><li>One test per Run and sample type, since <code>EWRunScript.py</code> changes settings for Run 3 and for data</li><li>Events/second and peak memory, used to size the full run</li></ul></div>
+            <div><h4>Output naming</h4><ul><li>Same pattern as <code>EWGridRun.py</code>: <code>user.&lt;user&gt;.&lt;analysis&gt;.&lt;DSID&gt;.&lt;sample&gt;.&lt;campaign&gt;.&lt;tag&gt;</code>, with <code>__NOFILTER</code>, <code>__SYS</code> or <code>__NOFILTER_SYS</code> appended when <code>--noFilter</code> or <code>--doSys</code> is used. <code>EWGridRun.py</code> drops the suffix when <code>--submissionTag</code> is set; whether to copy that is part of D4</li><li>The tag is the EWKit git tag, or a test suffix for untagged refs (D4)</li><li>Idempotency key per cluster, so a retried submit cannot double-submit</li></ul></div>
+          </div>
+          <p style="font-size:0.9rem;color:var(--muted)">EWKit's <code>share/submit_condor.py</code> is earlier prior art for HTCondor submission. It is tied to one user's paths and Run 2 campaigns, so the app replaces it rather than calling it.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <section id="setup-agents">
+      <h2>Run setup agents</h2>
+      <div class="prose">
+        <p>Run setup is the first place models are used. It is a good place to start: everything the agents need is read-only data the repository connector already serves, nothing they do spends compute, and what they produce is a RunSpec that still has to pass the input checks and Gate 1.</p>
+        <p>Two agents work around the deterministic validator. The <strong>builder</strong> turns a request such as "Run 3 background and data for RadiativeDecays at <code>EFP_v6.6</code>, with systematics" into a RunSpec. The <strong>reviewer</strong> reads the validator's findings and presents the problems as cards with evidence and suggested fixes. Neither agent edits EWKit configs or sample lists, and neither decides whether a check passes. A fix is a change to the RunSpec, which the person accepts, edits or dismisses, after which the validator runs again.</p>
+      </div>
+      <figure>
+        <div class="pipeline" style="grid-template-columns: repeat(auto-fit, minmax(128px, 1fr))">
+          <div class="step"><span class="n">in</span><h3>Request</h3><p>A plain-language request in the Run setup chat, or a form filled in by hand (D28).</p></div>
+          <div class="step"><span class="n">agent</span><h3>Builder</h3><p>Drafts a RunSpec through read-only tools, with a reason per field and the assumptions it made.</p></div>
+          <div class="step"><span class="n">code</span><h3>Validator</h3><p>Schema, repository and policy checks at the pinned commit. Returns findings with codes and evidence.</p></div>
+          <div class="step"><span class="n">agent</span><h3>Reviewer</h3><p>Ranks and explains the findings, adds judgement-level concerns, proposes RunSpec patches.</p></div>
+          <div class="step gate"><span class="n">person</span><h3>Accept or edit</h3><p>Each card is accepted, edited or dismissed. Accepted patches go back through the validator.</p></div>
+        </div>
+        <figcaption>The loop repeats until the person is satisfied and the validator reports no blocking findings. Rucio and image checks then run, and the result goes to Gate 1. The builder is optional: a RunSpec filled in by hand goes through the same validator and reviewer.</figcaption>
+      </figure>
+
+      <figure>
+        <pre class="code"><span class="c"># RunSpec sketch (illustrative, not final). Mirrors EWGridRun.py's options.</span>
+analysis:      RadiativeDecays
+ref:           EFP_v6.6                 <span class="c"># as typed by the person</span>
+commit:        &lt;sha&gt;                    <span class="c"># resolved by code, never by the model</span>
+config:        config.yaml              <span class="c"># --configName</span>
+runs:          [Run3]
+sample_lists:  [bkg, data]              <span class="c"># DAODs/Run3_bkg.txt, DAODs/Run3_data.txt</span>
+systematics:   do                       <span class="c"># do | no | config-default  (--doSys / --noSys)</span>
+no_filter:     false
+no_thinning:   false
+include:       []                       <span class="c"># -w patterns</span>
+skip:          []                       <span class="c"># --skip patterns</span>
+purpose:       production               <span class="c"># production | test: sets the tag rule (D4)</span>
+memory_mb:     2000
+files_per_job: null                     <span class="c"># null: worked out at Gate 1 from Rucio file sizes</span></pre>
+        <figcaption>The builder fills this schema through structured output, so it cannot return free text in place of a spec. Fields such as <code>commit</code>, the image digest and the output names are filled in by code.</figcaption>
+      </figure>
+
+      <h3>What each agent is given</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Context</th><th>Builder</th><th>Reviewer</th><th>How it is delivered</th></tr></thead>
+          <tbody>
+            <tr><td>The person's request</td><td>Yes</td><td>Yes, to judge whether the spec matches it</td><td>Chat message</td></tr>
+            <tr><td>RunSpec schema with a one-line description per field</td><td>Yes, as its output schema</td><td>Yes, for its patches</td><td>Structured output; patches are validated against it</td></tr>
+            <tr><td>EWKit knowledge card: what each option does, output naming, tag conventions, <code>Extend</code>, the per-analysis changes <code>EWRunScript.py</code> makes, systematics defaults</td><td>Yes</td><td>Yes</td><td>System prompt, cached. Written and kept by us, reviewed at each EWKit tag</td></tr>
+            <tr><td>Known pitfalls: unknown r-tags, empty lists, blocked folders, folders not run in CI, <code>Extend</code> on a read-only image, missing tag images, run size</td><td>No</td><td>Yes, as a checklist</td><td>System prompt, cached</td></tr>
+            <tr><td>Repository data at the resolved commit: refs, folder summary, campaign matrix, sample lists filtered by campaign or name</td><td>Yes</td><td>Yes, to check findings</td><td>Read-only tools over the connector's <code>/api/ewkit</code> endpoints. Whole lists are never pasted in; the largest has over 3,400 lines</td></tr>
+            <tr><td>Config facts: top-level blocks, <code>runSystematics</code>, <code>saveCutBookkeepers</code>, tree name, <code>AddConfigBlocks</code> modules, <code>Extend</code> chain</td><td>Yes</td><td>Yes</td><td>A digest computed by code. Raw YAML only through a tool, on request</td></tr>
+            <tr><td>Run policy: which refs suit a production or a test (D4), size caps, who may run the folder (D8)</td><td>Yes</td><td>Yes</td><td>System prompt, generated from the app's settings</td></tr>
+            <tr><td>Validator report: findings with codes and evidence</td><td>No, it runs afterwards</td><td>Yes, its main input</td><td>Structured findings, e.g. <code>UNKNOWN_RTAG</code>, <code>EMPTY_LIST</code>, <code>NO_IMAGE_FOR_COMMIT</code></td></tr>
+            <tr><td>The builder's reasoning</td><td>–</td><td>No (D29)</td><td>Its stated assumptions are shown to the person instead</td></tr>
+            <tr><td>Credentials, MCP tools, anything that writes</td><td>No</td><td>No</td><td>–</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3>Builder agent</h3>
+          <ul>
+            <li>Returns a RunSpec, a one-line reason for each field it set, a list of assumptions, and questions where the request is ambiguous</li>
+            <li>Asks instead of guessing. For example: "with systematics" when the config already turns them on, or "signal" for a folder whose lists are named <code>sig</code></li>
+            <li>Leaves the ref as typed; code resolves it to a commit and records both</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Reviewer agent</h3>
+          <ul>
+            <li>Returns issue cards: severity, title, explanation, evidence and an optional RunSpec patch</li>
+            <li>Groups and ranks the validator's findings and explains them in plain language</li>
+            <li>Adds judgement the validator cannot make: the spec does not match the request, a very large signal list when a subset was probably meant, or a folder never run in CI, which makes the test job matter more</li>
+            <li>When the fix is a change to EWKit, it says so, links the file at the commit, and names the folder's code owners, as the monitor does</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Rules enforced in code</h3>
+          <ul>
+            <li>Every card must cite a validator finding, or a file and line at the commit. Cards without evidence are dropped</li>
+            <li>Every patch must validate against the schema, and the validator runs again before the person sees the result</li>
+            <li>Both agents read at the resolved commit, never at a moving ref</li>
+            <li>Repository text reaches them only inside delimited evidence blocks</li>
+            <li>The builder and reviewer run as separate graph nodes with separate prompts and no shared conversation</li>
+            <li>The model IDs, prompt versions and accepted patches are recorded with the run</li>
+          </ul>
+        </div>
+      </div>
+
+      <figure>
+        <div class="incident" role="img" aria-label="Example reviewer card">
+          <div class="bar"><span>Needs a decision · Reviewer agent</span><span class="mono">DiTauStudies · Run3 bkg</span></div>
+          <div class="body">
+            <p><strong>38 of 257 Run 3 background datasets have an r-tag the campaign map does not know, so their outputs cannot be named.</strong> <code>EWGridRun.py</code> stops on the same datasets with "r-tag r17610 not recognised".</p>
+            <dl>
+              <dt>Evidence</dt><dd>Validator finding <code>UNKNOWN_RTAG</code>: <code>r17610</code> on 38 lines of <code>data/DiTauStudies/DAODs/Run3_bkg.txt</code> at <code>17c998c</code>, e.g. <code>mc23_13p6TeV.601183.PhPy8EG_AZNLO_Wplusenu…e8514_s4618_r17610_p7266</code></dd>
+              <dt>Proposal</dt><dd>Add <code>r17610</code> to this run's skip patterns, and ask the folder's code owner (@nifomin) which campaign <code>r17610</code> belongs to.</dd>
+              <dt>Effect</dt><dd>The 38 datasets are left out of this run and listed in its delivery report.</dd>
+              <dt>If declined</dt><dd>The input checks cannot pass for <code>Run3_bkg</code>.</dd>
+            </dl>
+            <div class="actions"><span class="btn primary">Accept patch</span><span class="btn">Edit</span><span class="btn">Dismiss</span><span class="btn">Ask a question</span></div>
+            <p class="mock-note">Mock-up built on a real finding on <code>master</code> at <code>17c998c</code>. Buttons are inactive here.</p>
+          </div>
+        </div>
+      </figure>
+
+      <div class="prose">
+        <p><strong>Build order.</strong> The RunSpec schema and the validator come first, because the reviewer is only as good as the findings it is given; without them it would make up problems or miss real ones. The builder comes next, then the reviewer. The validator and Run setup form are useful on their own if either agent turns out not to be.</p>
+      </div>
+    </section>
+
+    <section id="gitlab">
+      <h2>GitLab access and secrets</h2>
+      <div class="prose">
+        <p>The FastAPI service needs a GitLab credential to read EWKit, because the repository sits in an ATLAS group on gitlab.cern.ch. In this revision it only reads, so the credential is scoped to read access and nothing else. The container image is a separate concern: the HTCondor workers pull it, not the service.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Secret</th><th>Used by</th><th>Access needed</th><th>Created by</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>EWKit read token</td><td>agent-api, agent-worker</td><td>Project access token, role Reporter, scope <code>read_api</code> (covers file and tree reads)</td><td>An EWKit maintainer</td><td>Owned by the project, revocable by maintainers, not tied to a person. Expires (at most a year by default), so rotation needs an owner (D5)</td></tr>
+            <tr><td>Image pull credential</td><td>HTCondor jobs, if the registry is not readable anonymously</td><td>Deploy token with <code>read_registry</code></td><td>An EWKit maintainer</td><td>Not needed if images are published to <code>/cvmfs/unpacked.cern.ch</code> (D3)</td></tr>
+            <tr><td>Webhook secret</td><td>agent-api</td><td>Shared secret checked on each webhook call</td><td>Us, configured by a maintainer</td><td>Only if D6 chooses webhooks over polling</td></tr>
+            <tr><td>Model API key</td><td>agent-api (run setup agents), agent-worker (monitor)</td><td>Inference only</td><td>Us</td><td>Subject to D13</td></tr>
+            <tr><td>Per-user MCP credentials</td><td>agent-worker</td><td>As decided in D1</td><td>Each user, via the MCP portal</td><td>Encrypted at rest in Postgres if stored at all</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <h3>Handling rules</h3>
+          <ul>
+            <li>Stored as Kubernetes secrets and mounted only into the agent containers; the web container never sees them</li>
+            <li>Never sent to the browser or to the model, and never written to logs or the audit trail</li>
+            <li>The service talks to GitLab only through a small client that allows read endpoints, so a bug cannot turn into a write</li>
+            <li>An expiry warning in the operator view 30 days before any token lapses</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Why not the alternatives</h3>
+          <ul>
+            <li><strong>Deploy tokens</strong> allow git clone and registry pulls but not the REST API the connector uses</li>
+            <li><strong>A personal access token</strong> ties the service to one person's account and permissions</li>
+            <li><strong>Per-user OAuth</strong> would let the app see exactly what each user can see, but adds a GitLab login on top of SSO. Worth it only if per-user visibility matters, which it does not while every user reads the same repository</li>
+          </ul>
+        </div>
       </div>
     </section>
 
     <section id="monitor">
       <h2>Monitoring agent</h2>
       <div class="prose">
-        <p>The monitor is a LangGraph graph with one thread per production, checkpointed in Postgres so it survives restarts. It does not sleep in-process. Each check is a short run triggered on a schedule, which keeps load on the schedd predictable and lets a production be paused by simply not scheduling the next check.</p>
-        <p>Detection is rule-based and cheap: state counts, hold reasons, exit codes, time spent idle, throughput against the plan. The model is called only when a rule fires, to read the evidence, diagnose the cause, and draft an intervention from a fixed catalogue.</p>
+        <p>The monitor is a LangGraph graph with one thread per production, checkpointed in Postgres so it survives restarts. Each check is a short run triggered on a schedule, which keeps load on the schedd predictable and lets a production be paused by not scheduling the next check.</p>
+        <p>Detection is rule-based and cheap: state counts, hold reasons, exit codes, time spent idle, throughput against the plan. The model is called only when a rule fires, to read the evidence, diagnose the cause and draft an intervention from a fixed catalogue. It plays the role <code>get_ntuples.py --checkStatus --retry</code> plays for PanDA today, with explanations and approvals added.</p>
       </div>
       <figure>
         <div class="figure-box">
@@ -529,8 +712,8 @@ flowchart LR
             <li>Job state counts per cluster: idle, running, held, completed, removed</li>
             <li>Hold reasons, e.g. memory over request, proxy expired, file transfer failure</li>
             <li>Idle time beyond the norm, with the equivalent of <code>condor_q -analyze</code></li>
-            <li>Failed exits, with the tail of stderr parsed for known TCT and XRootD signatures</li>
-            <li>Throughput against the Gate B estimate</li>
+            <li>Failed exits, with the tail of stderr matched against known CP-algorithm, EWKit and XRootD error signatures</li>
+            <li>Throughput against the Gate 1 estimate</li>
             <li>Output files arriving in <code>/data</code>, opened with uproot for a quick check</li>
           </ul>
         </div>
@@ -538,11 +721,11 @@ flowchart LR
           <h3>Completion criteria</h3>
           <ul>
             <li>Every input file was processed exactly once, or an explicit, approved exclusion list exists</li>
-            <li>The sum of <code>CutBookkeeper</code> initial events matches the expected total for each sample: from Rucio file metadata in Phase 1, and from AMI as well once discovery arrives in Phase 2</li>
-            <li>No output file is zero-length or missing the <code>reco</code> tree</li>
+            <li>The sum of CutBookkeeper initial events matches the dataset's event count from Rucio or AMI metadata</li>
+            <li>No output file is empty or missing the output tree</li>
             <li>A provenance record is written next to the outputs</li>
           </ul>
-          <p style="font-size:0.88rem;color:var(--muted)">When to stop retrying and accept a partial production is decision D20.</p>
+          <p style="font-size:0.88rem;color:var(--muted)">When to stop retrying and accept a partial production is D23.</p>
         </div>
       </div>
     </section>
@@ -550,7 +733,7 @@ flowchart LR
     <section id="interventions">
       <h2>Interventions</h2>
       <div class="prose">
-        <p>The agent can only propose actions from a typed catalogue. Each entry has a fixed implementation, a risk level and a default approval policy. The model fills in parameters and writes the explanation; it cannot invent new kinds of action.</p>
+        <p>The agent can only propose actions from a typed catalogue. Each entry has a fixed implementation, a risk level and a default approval policy. The model fills in parameters and writes the explanation; it cannot invent new kinds of action, and it cannot change an analysis's config or sample lists.</p>
       </div>
       <div class="table-wrap">
         <table>
@@ -561,26 +744,27 @@ flowchart LR
             <tr><td>Move jobs to the long queue, or allow MWT2 overflow</td><td>Edit or resubmit with new ClassAds</td><td><span class="pill low">Low</span></td><td><span class="pill human">Approval</span></td></tr>
             <tr><td>Re-split into fewer files per job</td><td>Remove and resubmit with new input lists</td><td><span class="pill med">Medium</span></td><td><span class="pill human">Approval</span></td></tr>
             <tr><td>Read from a different replica, or skip a bad site</td><td>Regenerate input lists from Rucio</td><td><span class="pill med">Medium</span></td><td><span class="pill human">Approval</span></td></tr>
+            <tr><td>Exclude a dataset from this run</td><td>Mark it excluded; the delivery report lists it</td><td><span class="pill med">Medium</span></td><td><span class="pill human">Approval</span></td></tr>
             <tr><td>Replicate a dataset to <code>MWT2_UC_LOCALGROUPDISK</code></td><td>Rucio replication rule (uses 15 TB group quota)</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval</span></td></tr>
-            <tr><td>Change the YAML and rerun affected samples</td><td>Agent opens a merge request with the change; once merged, new test job and resubmit</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval + config review and new test job</span></td></tr>
             <tr><td>Abort the production</td><td><code>condor_rm</code> on all clusters</td><td><span class="pill high">High</span></td><td><span class="pill human">Approval</span></td></tr>
-            <tr><td>Renew credentials or link identity</td><td>Only the user can do this</td><td>–</td><td>Notify the user with instructions</td></tr>
+            <tr><td>A config or sample list problem</td><td>No action. The agent explains it, links the file at the commit, and suggests raising it with the folder's code owners</td><td>–</td><td>Notify only</td></tr>
+            <tr><td>Renew credentials or link identity</td><td>Only the user can do this</td><td>–</td><td>Notify only</td></tr>
           </tbody>
         </table>
       </div>
       <figure>
         <div class="incident" role="img" aria-label="Example approval card">
-          <div class="bar"><span>Needs approval · Monitor agent</span><span class="mono">ttbar-ljets-mc23 · cluster 5</span></div>
+          <div class="bar"><span>Needs approval · Monitor agent</span><span class="mono">RadiativeDecays · Run3 bkg</span></div>
           <div class="body">
-            <p><strong>142 of 1,200 jobs are held because they used more memory than requested.</strong> They all process mc23e files from the same DSID, which carry more pileup than the test sample.</p>
+            <p><strong>142 of 1,200 jobs are held because they used more memory than requested.</strong> They all process mc23e files from the same Z+jets DSID, which carry more pileup than the test sample.</p>
             <dl>
               <dt>Evidence</dt><dd>Hold reason: memory usage exceeded <code>request_memory</code> (2 GB). Peak resident memory in three completed neighbours: 2.4–2.6 GB.</dd>
               <dt>Proposal</dt><dd>Set <code>RequestMemory = 4096</code> on the 142 held jobs and release them.</dd>
               <dt>Cost</dt><dd>No new core-hours. Fewer slots fit 4 GB jobs, so these may wait longer in the queue.</dd>
-              <dt>If declined</dt><dd>The jobs stay held. The production cannot complete for this sample.</dd>
+              <dt>If declined</dt><dd>The jobs stay held. The production cannot complete for this dataset.</dd>
             </dl>
             <div class="actions"><span class="btn primary">Approve</span><span class="btn">Change value</span><span class="btn">Reject</span><span class="btn">Ask a question</span></div>
-            <p class="mock-note">Illustrative mock-up of the card the web app would render. Buttons are inactive here.</p>
+            <p class="mock-note">Illustrative mock-up with invented numbers. Buttons are inactive here.</p>
           </div>
         </div>
       </figure>
@@ -589,69 +773,53 @@ flowchart LR
     <section id="webapp">
       <h2>Web app</h2>
       <div class="prose">
-        <p>A React application (Next.js assumed, see D22) using CopilotKit's LangGraph integration. Shared agent state streams to the browser over AG-UI, so the dashboard and the chat always show the same picture. A chat sidebar is available on every screen for questions like "why is the single-top sample slower than ttbar?"</p>
+        <p>A React application using CopilotKit's LangGraph integration (framework choice is D25). Shared agent state streams to the browser over AG-UI, so the dashboard and the chat always show the same picture. A chat sidebar is available on every screen for questions such as "why is Run 3 signal slower than Run 2?"</p>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Screen</th><th>Phase</th><th>What it shows</th><th>CopilotKit mechanism</th></tr></thead>
+          <thead><tr><th>Screen</th><th>What it shows</th><th>CopilotKit mechanism</th></tr></thead>
           <tbody>
-            <tr><td>Repository and commits</td><td><span class="phase p1">1</span></td><td>Connected GitLab projects, recent commits with their input-check results, and a "Start production" action on a chosen commit</td><td>Plain view; check results streamed from agent state</td></tr>
-            <tr><td>Request composer</td><td><span class="phase p2">2</span></td><td>Chat on one side, the structured request filling in on the other</td><td>Shared agent state (<code>useCoAgent</code>), frontend actions to update form fields</td></tr>
-            <tr><td>Config review</td><td><span class="phase p2">2</span></td><td>YAML editor with diff, per-block rationale, approve or revise</td><td>Graph interrupt rendered as a review panel (<code>useLangGraphInterrupt</code>)</td></tr>
-            <tr><td>Sample manifest</td><td><span class="phase p1">1</span></td><td>Table of samples with replica status and the cost estimate</td><td>Interrupt for Gate B; readable context so chat can answer questions about rows</td></tr>
-            <tr><td>Production dashboard</td><td><span class="phase p1">1</span></td><td>Per-sample progress, state counts, throughput against plan, recent events</td><td>Streamed agent state; generative UI for status summaries in chat</td></tr>
-            <tr><td>Intervention inbox</td><td><span class="phase p1">1</span></td><td>Pending approval cards with evidence, history of past decisions</td><td>One card per pending interrupt; answer resumes the graph</td></tr>
-            <tr><td>Audit log</td><td><span class="phase p1">1</span></td><td>Every tool call, approval and state change, filterable by production</td><td>Plain view over Postgres; not agent-driven</td></tr>
+            <tr><td>Analyses</td><td>Folders under <code>data/</code> at a chosen ref, with runnable status, configs, sample list sizes, code owners and recent runs</td><td>Plain view over the repository connector</td></tr>
+            <tr><td>Run setup</td><td>The <code>EWGridRun</code>-style options as an editable RunSpec form, a chat for the builder agent, and input-check results with the reviewer's issue cards as they complete</td><td>Shared agent state (<code>useCoAgent</code>) for the RunSpec and streamed check results; one interrupt card per reviewer issue (<code>useLangGraphInterrupt</code>)</td></tr>
+            <tr><td>Sample manifest</td><td>Datasets grouped by the list's <code>#</code> headings, with replica status and the cost estimate</td><td>Graph interrupt for Gate 1 (<code>useLangGraphInterrupt</code>); readable context so chat can answer questions about rows</td></tr>
+            <tr><td>Production dashboard</td><td>Per-dataset progress, state counts, throughput against plan, recent events</td><td>Streamed agent state; generative UI for status summaries in chat</td></tr>
+            <tr><td>Intervention inbox</td><td>Pending approval cards with evidence, and history of past decisions</td><td>One card per pending interrupt; the answer resumes the graph</td></tr>
+            <tr><td>Audit log</td><td>Every tool call, approval and state change, filterable by run and analysis</td><td>Plain view over Postgres</td></tr>
           </tbody>
         </table>
       </div>
       <div class="prose">
-        <p>Approvals can wait hours, since a monitor thread stays paused at its interrupt until someone answers. People will not keep a tab open that long, so pending approvals also need an out-of-app notification (D13).</p>
+        <p>Approvals can wait hours, since a monitor thread stays paused at its interrupt until someone answers, so pending approvals also need an out-of-app notification (D17).</p>
       </div>
     </section>
 
     <section id="deployment">
       <h2>Deployment</h2>
       <div class="prose">
-        <p>The system ships as two container images, a web image and an agent image, plus Postgres. Both images sit behind one hostname, so the browser sees a single origin. That avoids cross-origin configuration and keeps one sign-in session cookie for the whole app.</p>
+        <p>The system ships as two container images, a web image and an agent image, plus Postgres. Both sit behind one hostname, so the browser sees a single origin. The EWKit image is not ours to build: EWKit's CI already produces it.</p>
       </div>
 
       <h3>Agent service: FastAPI with LangGraph as a library</h3>
-      <div class="prose">
-        <p>LangGraph is a Python library, so graphs can run inside any process. There are two ways to host them.</p>
-      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Option</th><th>What it provides</th><th>What it costs</th><th>Verdict</th></tr></thead>
           <tbody>
-            <tr><td>LangGraph Agent Server</td><td>A ready-made HTTP API for threads, runs and streaming, plus scheduled runs, a background task queue and Postgres checkpointing. Extra FastAPI routes can be added through <code>http.app</code> in <code>langgraph.json</code>.</td><td>A standalone production deployment needs Postgres, Redis and a paid LangSmith license. <code>langgraph dev</code> is for local development only. Aegra is a community open-source replacement, but a third-party dependency.</td><td>Reconsider if IRIS-HEP gets LangSmith access</td></tr>
-            <tr><td><strong>Own FastAPI service</strong></td><td>Graphs compiled with the Postgres checkpointer. CopilotKit connects through an AG-UI endpoint mounted with <code>add_langgraph_fastapi_endpoint</code> from <code>ag_ui_langgraph</code>. GitLab webhooks and the REST API live in the same app.</td><td>We write the scheduling of monitor checks ourselves. That scheduling is simple: one short graph run per production every few minutes.</td><td><span class="pill auto">Recommended</span></td></tr>
+            <tr><td>LangGraph Agent Server</td><td>A ready-made HTTP API for threads, runs and streaming, plus scheduled runs, a background task queue and Postgres checkpointing. Extra FastAPI routes via <code>http.app</code> in <code>langgraph.json</code>.</td><td>A standalone production deployment needs Postgres, Redis and a paid LangSmith license. <code>langgraph dev</code> is for local development only.</td><td>Reconsider if IRIS-HEP gets LangSmith access</td></tr>
+            <tr><td><strong>Own FastAPI service</strong></td><td>Graphs compiled with the Postgres checkpointer. CopilotKit connects through an AG-UI endpoint mounted with <code>add_langgraph_fastapi_endpoint</code> from <code>ag_ui_langgraph</code>. The repository connector and REST API live in the same app.</td><td>We write the scheduling of monitor checks: one short graph run per production every few minutes.</td><td><span class="pill auto">Recommended</span></td></tr>
           </tbody>
         </table>
       </div>
       <div class="prose">
-        <p>The agent image runs as two processes that share Postgres, so a slow web request can never hold up a monitor check, and the reverse is also true:</p>
+        <p>The agent image runs as two processes that share Postgres:</p>
         <ul>
-          <li><strong>agent-api</strong> serves the AG-UI endpoint, the GitLab webhook and the REST API for the dashboard and audit log. It holds no state of its own, so it can scale to several replicas.</li>
-          <li><strong>agent-worker</strong> runs the scheduled monitor checks and the submission steps. It starts as a single replica, which avoids any need for leader election.</li>
+          <li><strong>agent-api</strong> serves the AG-UI endpoint, the REST API for analyses, runs and the audit log, and the optional GitLab webhook. It holds no state of its own, so it can scale to several replicas.</li>
+          <li><strong>agent-worker</strong> runs scheduled monitor checks, repository polling and submission steps. One replica at first, which avoids leader election.</li>
         </ul>
-        <p>LangGraph Studio and <code>langgraph dev</code> remain available on developers' laptops for debugging graphs, whichever server runs in production.</p>
       </div>
 
       <h3>Web app: one Node container</h3>
       <div class="prose">
-        <p>CopilotKit's React SDK talks to the CopilotKit Runtime, a small Node service that relays to the agent service over AG-UI using <code>LangGraphHttpAgent</code>. So a Node process exists somewhere whichever frontend build is chosen.</p>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Option</th><th>Containers</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr><td><strong>Next.js</strong></td><td>One: pages and the runtime at <code>/api/copilotkit</code></td><td>Fewest moving parts. <span class="pill auto">Recommended</span></td></tr>
-            <tr><td>Vite single-page app</td><td>Two: static files (nginx, or served by FastAPI) and a tiny Node runtime (Express or Hono)</td><td>Simpler frontend build, one more service to run</td></tr>
-            <tr><td>SvelteKit (if chosen in D22)</td><td>One: SvelteKit Node server</td><td>Talks to the agent through <code>@ag-ui/client</code>; no CopilotKit runtime</td></tr>
-            <tr><td>GitLab Pages for static files</td><td>Static hosting plus separate API services</td><td>API on another domain means cross-origin calls and cookies across domains. Not recommended.</td></tr>
-          </tbody>
-        </table>
+        <p>CopilotKit's React SDK talks to the CopilotKit Runtime, a small Node service that relays to the agent service over AG-UI using <code>LangGraphHttpAgent</code>. With Next.js, the runtime lives in the same container as the pages at <code>/api/copilotkit</code>. A Vite build would need a separate small Node container for the runtime. GitLab Pages is not recommended, because the API would sit on another domain.</p>
       </div>
 
       <h3>Topology</h3>
@@ -661,41 +829,35 @@ ingress  &lt;app hostname&gt;
   /                  → web            Next.js pages
   /api/copilotkit    → web            CopilotKit runtime → agent-api over AG-UI
   /agent/*           → agent-api      FastAPI: AG-UI endpoint, REST, audit log
-  /hooks/gitlab      → agent-api      GitLab push webhook (token-checked, no SSO)
-                       agent-worker   same image as agent-api: monitor checks, submissions
+  /hooks/gitlab      → agent-api      optional webhook (secret-checked, no SSO), see D6
+                       agent-worker   same image: monitor checks, repo polling, submissions
                        postgres       checkpoints, application records, audit log
 
 outbound from agent-api and agent-worker:
+  gitlab.cern.ch API        read EWKit: refs, data/ tree, files (read_api token)
   mcp.af.uchicago.edu/mcp   Rucio, AMI, HTCondor, AF files
-  gitlab.cern.ch API        read files, commit statuses, merge requests (Phase 2)
-  model API                 diagnosis, later authoring (subject to D9)</pre>
-        <figcaption>The webhook path skips single sign-on because GitLab cannot log in; it checks GitLab's secret token header instead. AG-UI streams over long-lived HTTP responses, so the ingress needs response buffering turned off and generous read timeouts on <code>/api/copilotkit</code> and <code>/agent/*</code>.</figcaption>
+  model API                 run setup agents, failure diagnosis (subject to D13)
+
+pulled by HTCondor jobs, not by the service:
+  EWKit image               gitlab-registry.cern.ch or /cvmfs/unpacked.cern.ch (D3)</pre>
+        <figcaption>AG-UI streams over long-lived HTTP responses, so the ingress needs response buffering turned off and generous read timeouts on <code>/api/copilotkit</code> and <code>/agent/*</code>.</figcaption>
       </figure>
 
       <div class="two-col">
         <div class="panel">
           <h3>Environments</h3>
           <ul>
-            <li><strong>Local:</strong> Docker Compose with Postgres, the agent image and the web app. A stub MCP server replays recorded job histories, so monitor work needs no facility access.</li>
-            <li><strong>Staging:</strong> its own namespace on the hosting cluster, a test GitLab project, and the real MCP gateway with a test account.</li>
-            <li><strong>Production:</strong> its own namespace, with Postgres backed up and the audit log retained per D19.</li>
+            <li><strong>Local:</strong> Docker Compose with Postgres, the agent image and the web app. A stub MCP server replays recorded job histories, and a local checkout of EWKit stands in for the GitLab API.</li>
+            <li><strong>Staging:</strong> its own namespace, the real MCP gateway with a test account, reading EWKit read-only like production.</li>
+            <li><strong>Production:</strong> its own namespace, with Postgres backed up and the audit log retained per D22.</li>
           </ul>
         </div>
         <div class="panel">
           <h3>Build and release</h3>
           <ul>
-            <li>GitLab CI builds both images on every merge and pushes them to the project's container registry</li>
+            <li>GitLab CI in our own repository builds the web and agent images and pushes them to its registry</li>
             <li>Tagged releases deploy to production; the default branch deploys to staging</li>
-            <li>Deployment tooling (Helm, Kustomize or Argo CD) is decision D28</li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>Secrets</h3>
-          <ul>
-            <li>GitLab OAuth application secret and webhook token</li>
-            <li>Model API key</li>
-            <li>Per-user MCP and GitLab tokens, encrypted at rest in Postgres, if D1 and D25 settle on stored user tokens</li>
-            <li>All held as Kubernetes secrets, never in images or repositories</li>
+            <li>Deployment tooling (Helm, Kustomize or Argo CD) is D26</li>
           </ul>
         </div>
       </div>
@@ -703,20 +865,20 @@ outbound from agent-api and agent-worker:
 
     <section id="data">
       <h2>Data model</h2>
-      <div class="prose"><p>Application records live in Postgres next to the LangGraph checkpoints. The checkpoint is the agent's working memory; these tables are the system of record that the UI and audit log read.</p></div>
+      <div class="prose"><p>Application records live in Postgres next to the LangGraph checkpoints. The checkpoint is the agent's working memory; these tables are the system of record that the UI and audit log read. Configs and sample lists are not copied as editable records: a run refers to them by commit SHA and path.</p></div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Entity</th><th>Key fields</th><th>Notes</th></tr></thead>
           <tbody>
-            <tr><td>Request</td><td>owner, GitLab project, ref, commit SHA, status; prose and structured fields in Phase 2</td><td>One per physicist ask</td></tr>
-            <tr><td>ConfigVersion</td><td>request, commit SHA and file path, YAML text, TCT tag, source (committed or drafted), merge request and skill SHA if drafted, approved by/at</td><td>Immutable; edits create a new version</td></tr>
-            <tr><td>SampleManifest</td><td>config version, rows (DSID, campaign, container, files, events)</td><td>Frozen at Gate B</td></tr>
-            <tr><td>Production</td><td>manifest, caps (jobs, core-hours), state, LangGraph thread id</td><td>The unit the monitor watches</td></tr>
-            <tr><td>JobCluster</td><td>production, manifest row, HTCondor ClusterId, submit hash</td><td>One per DSID and campaign</td></tr>
-            <tr><td>Incident</td><td>production, rule fired, evidence, diagnosis</td><td>Created when detection fires</td></tr>
+            <tr><td>AnalysisSnapshot</td><td>folder, commit SHA, configs, sample files, Extend chain, code owners, runnable status</td><td>Cached read of one folder at one commit</td></tr>
+            <tr><td>Run</td><td>owner, analysis, ref name, commit SHA, image digest, RunSpec (config file, runs, sample lists, flags, include/skip patterns), status</td><td>The unit a person starts and the monitor watches</td></tr>
+            <tr><td>SetupReview</td><td>run, RunSpec version, request text, builder assumptions, validator findings, reviewer issues, accepted and dismissed patches, model IDs, prompt versions</td><td>One per validator pass; shows how the final RunSpec came about</td></tr>
+            <tr><td>SampleManifest</td><td>run, rows (dataset, DSID, campaign, group heading, files, events, replicas)</td><td>Frozen at Gate 1</td></tr>
+            <tr><td>JobCluster</td><td>run, manifest row, HTCondor ClusterId, submit hash, output dataset name</td><td>One per dataset</td></tr>
+            <tr><td>Incident</td><td>run, rule fired, evidence, diagnosis</td><td>Created when detection fires</td></tr>
             <tr><td>Intervention</td><td>incident, catalogue type, parameters, status, result</td><td>Proposed, approved, rejected, executed, verified</td></tr>
             <tr><td>Approval</td><td>gate or intervention, decided by, decision, edits, timestamp</td><td>Never deleted</td></tr>
-            <tr><td>AuditEvent</td><td>actor (user or agent), tool, arguments, outcome</td><td>Every MCP call is logged</td></tr>
+            <tr><td>AuditEvent</td><td>actor (user or agent), tool, arguments, outcome</td><td>Every MCP and GitLab call is logged, without secrets</td></tr>
           </tbody>
         </table>
       </div>
@@ -729,26 +891,28 @@ outbound from agent-api and agent-worker:
           <h3>Guardrails</h3>
           <ul>
             <li>Typed intervention catalogue; no free-form shell or <code>condor_*</code> commands from the model</li>
-            <li>Per-production caps on jobs, core-hours and output size, enforced in code</li>
-            <li>A kill switch per production and a global one for operators</li>
+            <li>Run setup agents have only read-only repository tools. Their output is a RunSpec or a patch to one, validated by code; they never decide that a check passed</li>
+            <li>Per-run caps on jobs, core-hours and output size, enforced in code</li>
+            <li>A kill switch per run and a global one for operators</li>
             <li>Write tools available only to the execution node, never to the diagnosis node</li>
             <li>Approvals expire if the underlying state has changed since the card was created</li>
+            <li>Read-only access to EWKit, enforced by both the token's scope and the client code</li>
           </ul>
         </div>
         <div class="panel">
           <h3>Untrusted input</h3>
           <ul>
-            <li>Job stdout and stderr, file names, dataset metadata, and YAML comments and commit messages from GitLab are data, not instructions. They are passed to the model inside clearly delimited evidence blocks.</li>
-            <li>Nothing read from a log can widen the agent's permissions or skip an approval, because policy checks run in code after the model responds.</li>
-            <li>Log excerpts are truncated and summarised before reaching the model, to limit both cost and injection surface.</li>
+            <li>Job stdout and stderr, dataset metadata, and repository content (YAML comments, READMEs, commit messages) are data, not instructions. They reach the model only inside clearly delimited evidence blocks.</li>
+            <li>Nothing read from a log or the repository can widen the agent's permissions or skip an approval, because policy checks run in code after the model responds.</li>
+            <li>Repository code runs only inside the EWKit image on HTCondor workers, never in the agent service.</li>
           </ul>
         </div>
         <div class="panel">
           <h3>Accountability</h3>
           <ul>
             <li>Every MCP call runs as the requesting user through the broker, so facility logs show who acted</li>
-            <li>The audit log records which model and skill version produced each proposal</li>
-            <li>Provenance is written next to the outputs for later reproduction, keyed by GitLab project and commit SHA</li>
+            <li>The audit log records which model produced each proposal</li>
+            <li>Provenance next to the outputs: EWKit commit and tag, image digest, analysis, config file, run options, dataset list, approvals</li>
           </ul>
         </div>
       </div>
@@ -758,20 +922,27 @@ outbound from agent-api and agent-worker:
       <h2>Evaluation</h2>
       <div class="two-col">
         <div class="panel">
-          <h3>Monitoring <span class="phase p1">Phase 1</span></h3>
+          <h3>Run setup agents</h3>
           <ul>
-            <li>Recorded job histories replayed through the graph: held for memory, proxy expiry, bad replica, slow site, a corrupt input file</li>
-            <li>Metrics: time to detection, correct diagnosis rate, false alarm rate, approval acceptance rate</li>
-            <li>Shadow mode in production first: the agent proposes, nobody acts, and operators compare its proposals with what they actually did</li>
-            <li>Phase 1 users bring productions they would run anyway, which gives realistic failure data early</li>
+            <li>Builder: a set of requests with the RunSpec each should produce, including ambiguous ones where the right answer is a question</li>
+            <li>Reviewer: specs with known problems, many taken from <code>master</code> as it is: <code>r17610</code> in DiTauStudies, its empty Run 3 signal list, the blocked SUSYEWK1L2L, an untagged ref for a full production, an <code>Extend</code> folder, a request that does not match its spec</li>
+            <li>Metrics: problems caught, false alarms, cards without usable evidence, and how often people accept the suggested patch</li>
+            <li>Rerun at each EWKit tag and each prompt change</li>
           </ul>
         </div>
         <div class="panel">
-          <h3>Config authoring <span class="phase p2">Phase 2</span></h3>
+          <h3>Monitoring</h3>
           <ul>
-            <li>A golden set of requests paired with reviewed YAML. The configs committed during Phase 1 are a natural source, with history showing how each one was fixed.</li>
-            <li>Pass criteria: deterministic checks pass, and a 1,000-event local run succeeds</li>
-            <li>Metric: share of drafts approved at Gate A with no edits, and median edits per draft</li>
+            <li>Recorded job histories replayed through the graph: held for memory, proxy expiry, bad replica, slow site, a corrupt input file</li>
+            <li>Metrics: time to detection, correct diagnosis rate, false alarm rate, approval acceptance rate</li>
+            <li>Shadow mode in production first: the agent proposes, nobody acts, and operators compare its proposals with what they did</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Runs and outputs</h3>
+          <ul>
+            <li>For each runnable folder, a small AF run compared against the same datasets' grid n-tuples from <code>data/&lt;Folder&gt;/ntuples/</code>, where those lists exist: same branches, same event counts</li>
+            <li>Input checks run against every folder at each new EWKit tag, to catch unknown r-tags and missing replicas early</li>
           </ul>
         </div>
       </div>
@@ -779,18 +950,21 @@ outbound from agent-api and agent-worker:
 
     <section id="plan">
       <h2>Delivery plan</h2>
-      <div class="prose"><p>Phase 1 ends with a pilot of the monitor on real productions. Its uploaded configs, replica lists and incident history then feed the Phase 2 work.</p></div>
       <div class="milestones">
-        <div class="ms-phase">Phase 1 · Monitor first</div>
-        <div class="ms"><span class="ms-id">M0 · Spike</span><h3>Confirm the platform</h3><p>List the actual HTCondor tools on <code>atlas-af</code>, test credential delegation for a long-running agent, submit one hand-written TCT job through MCP and read its log back, and receive a webhook from a test GitLab project.</p><p class="exit"><strong>Exit:</strong> D1, D2, D3, D9 and D25 decided.</p></div>
-        <div class="ms"><span class="ms-id">M1 · Bring your own inputs</span><h3>Upload, check, test, launch</h3><p>Connect a GitLab project, read <code>reco.yaml</code> and <code>samples.yaml</code> at a chosen commit, post commit statuses, deterministic input checks, manifest, Gate B with cost estimate, test job, Gate C, full submission. A minimal dashboard shows job states. Monitoring is still manual.</p><p class="exit"><strong>Exit:</strong> one real production started from a GitLab commit and delivered.</p></div>
+        <div class="ms"><span class="ms-id">M0 · Spike</span><h3>Confirm the platform</h3><p>Read EWKit's <code>data/</code> tree with a project access token. Run the EWKit image on one AF worker against one DAOD file. List the actual HTCondor tools on <code>atlas-af</code>, submit one job through MCP and read its log back. Test credential delegation for a long-running agent.</p><p class="exit"><strong>Exit:</strong> D1, D2, D3, D5 and D13 decided.</p></div>
+        <div class="ms"><span class="ms-id">M1 · Analyses and runs</span><h3>Choose, check, test, launch</h3><p>Repository connector (done: the campaign browser), Analyses and Run setup screens, the RunSpec schema and validator, then the builder and reviewer agents, Gate 1 with cost estimate, test jobs, Gate 2, full submission with EWGridRun-compatible output names. A minimal dashboard shows job states; monitoring is still manual.</p><p class="exit"><strong>Exit:</strong> one real production of one folder delivered, with outputs matching the grid n-tuples for the same datasets. The reviewer catches the known problems on <code>master</code> in its evaluation set.</p></div>
         <div class="ms"><span class="ms-id">M2 · Read-only monitor</span><h3>Detect and explain</h3><p>Monitor graph in shadow mode: detection rules, model diagnosis and proposed approval cards, with no execution.</p><p class="exit"><strong>Exit:</strong> false alarm rate and diagnosis accuracy acceptable on replays and live runs.</p></div>
         <div class="ms"><span class="ms-id">M3 · Approved actions</span><h3>Turn on interventions</h3><p>Execution node, approval cards that resume the graph, verification, notifications. Low-risk catalogue entries first.</p><p class="exit"><strong>Exit:</strong> interventions executed safely on real productions.</p></div>
-        <div class="ms"><span class="ms-id">M4 · Monitor pilot</span><h3>Pilot Phase 1</h3><p>Onboard a small group of analysers who bring their own configs. Add the audit view, the operator kill switch and user documentation.</p><p class="exit"><strong>Exit:</strong> go or no-go for Phase 1 availability, and a set of real analysis repositories to learn from in Phase 2.</p></div>
-        <div class="ms-phase">Phase 2 · Agentic front end</div>
-        <div class="ms"><span class="ms-id">M5 · Config authoring</span><h3>Request to validated YAML</h3><p>Authoring graph with the TCT skill, request composer, config review and Gate A. Drafted configs arrive as merge requests and flow into the existing input checks once merged.</p><p class="exit"><strong>Exit:</strong> golden-set pass rate agreed with physicists.</p></div>
-        <div class="ms"><span class="ms-id">M6 · Sample discovery</span><h3>Find the data</h3><p>Rucio and AMI discovery opens a merge request with <code>samples.yaml</code>. Completion checks gain AMI event totals.</p><p class="exit"><strong>Exit:</strong> discovered sample lists match hand-built lists on the pilot analyses.</p></div>
-        <div class="ms"><span class="ms-id">M7 · Full workflow pilot</span><h3>End to end from a request</h3><p>Pilot users start from a plain-language request. Group sharing of productions, if wanted (D17).</p><p class="exit"><strong>Exit:</strong> go or no-go for wider availability.</p></div>
+        <div class="ms"><span class="ms-id">M4 · Pilot</span><h3>EWKit analysis teams</h3><p>Two or three analysis teams run real productions. Add the operator view, kill switch, token-expiry warnings and user documentation.</p><p class="exit"><strong>Exit:</strong> go or no-go for all EWKit analyses.</p></div>
+      </div>
+      <div class="panel" style="max-width:820px">
+        <h3>Later, not scheduled</h3>
+        <ul>
+          <li>A PanDA backend that runs <code>EWGridRun.py</code>, so the same monitor and approvals cover grid productions (D10)</li>
+          <li>Proposing merge requests that update <code>ntuples/*.txt</code> after a production, as <code>get_ntuples.py</code> does for grid outputs (D7)</li>
+          <li>Agent help with sample list upkeep, such as p-tag updates in the style of <code>update_tags.py</code>, delivered as merge requests</li>
+          <li>Agent-written configs and new analyses, possibly using the TopCPToolkit skill as a reference for CP algorithm YAML settings</li>
+        </ul>
       </div>
     </section>
 
@@ -798,7 +972,7 @@ outbound from agent-api and agent-worker:
       <div class="dec-intro">
         <div class="eyebrow" style="color:var(--gate)">Needs input</div>
         <h2>Decisions needed</h2>
-        <div class="prose"><p>Each decision lists the options, a current leaning with the reason, and the milestone by which it must be settled. Items with an amber edge block M0 and should be resolved first.</p></div>
+        <div class="prose"><p>Renumbered for v1.0. Each decision lists the options, a current leaning with the reason, and the milestone by which it must be settled. Items with an amber edge block M0.</p></div>
         <div class="chips" role="group" aria-label="Filter decisions by area" id="chips"></div>
       </div>
       <div class="decisions" id="decisions-list">
@@ -806,9 +980,9 @@ outbound from agent-api and agent-worker:
         <article class="dec blocker" data-area="Identity and security">
           <div class="id">D1</div>
           <div class="main">
-            <div class="top"><h3>Whose identity does the agent act under?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
+            <div class="top"><h3>Whose identity does the agent act under at the facility?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
             <p class="q">The monitor runs for days, longer than a browser OAuth session. It needs to call the MCP gateway as the user throughout.</p>
-            <p class="opts">Options: per-user OAuth with refresh tokens stored by the agent service · user-issued Personal Access Token from the MCP portal · a facility service account with jobs tagged by user.</p>
+            <p class="opts">Options: per-user OAuth with refresh tokens stored by the agent service · a user-issued Personal Access Token from the MCP portal · a facility service account with jobs tagged by user.</p>
             <p class="lean"><strong>Leaning:</strong> per-user delegated OAuth through the broker, with PATs as a fallback. A service account breaks per-user accounting and quota and needs facility sign-off.</p>
           </div>
         </article>
@@ -818,294 +992,321 @@ outbound from agent-api and agent-worker:
           <div class="main">
             <div class="top"><h3>How do we reach HTCondor?</h3><span class="area">Compute and data</span><span class="when">by M0</span></div>
             <p class="q">The <code>atlas-af</code> gateway lists HTCondor as a backend, but its documented tool names cover identity, Rucio, AMI, JupyterLab and files. We need submit, query, history, edit, release, remove and log access.</p>
-            <p class="opts">Options: use the gateway's HTCondor tools as they are · contribute the missing tools to the gateway · run our own small MCP server on a submit host using the HTCondor Python bindings.</p>
-            <p class="lean"><strong>Leaning:</strong> gateway first, contributing missing tools upstream. Running our own server duplicates the credential broker, which is the hardest part.</p>
+            <p class="opts">Options: use the gateway's HTCondor tools as they are · contribute missing tools to the gateway · run our own small MCP server on a submit host using the HTCondor Python bindings.</p>
+            <p class="lean"><strong>Leaning:</strong> gateway first, contributing missing tools upstream. Our own server would duplicate the credential broker, which is the hardest part.</p>
           </div>
         </article>
 
         <article class="dec blocker" data-area="Compute and data">
           <div class="id">D3</div>
           <div class="main">
-            <div class="top"><h3>Where is TopCPToolkit built?</h3><span class="area">Compute and data</span><span class="when">by M0</span></div>
-            <p class="q">TCT is compiled from source against AnalysisBase 25.2.x. Jobs need a ready build.</p>
-            <p class="opts">Options: a container image per TCT release tag, built in CI · a build in the user's <code>$HOME</code> per production · compile inside each job.</p>
-            <p class="lean"><strong>Leaning:</strong> one image per release tag, published where AF workers can read it. It is reproducible and avoids per-job compile time. Custom algorithms would later need an overlay image.</p>
+            <div class="top"><h3>How do HTCondor jobs get the EWKit image?</h3><span class="area">Compute and data</span><span class="when">by M0</span></div>
+            <p class="q">EWKit's CI pushes images tagged by ref slug, so a branch tag moves with every push. Its <code>workflow:</code> rules appear to skip tag pipelines, so the tags productions run from may have no image at all. Workers must also be allowed to pull from the registry, and the image must tolerate a read-only filesystem, which <code>Extend</code> configs currently do not.</p>
+            <p class="opts">Options: apptainer pulls <code>docker://</code> from gitlab-registry.cern.ch, using a <code>read_registry</code> deploy token if needed · publish EWKit images to <code>/cvmfs/unpacked.cern.ch</code> · build EWKit from source on the AF for each tag.</p>
+            <p class="lean"><strong>Leaning:</strong> ask the maintainers to add a tag rule to the CI workflow, then <code>unpacked.cern.ch</code> for tagged releases if they agree. Otherwise pull once per run into a cached image file on <code>/data</code>, pinned by digest and checked against the commit through the image's <code>CI_COMMIT_SHA</code>. Run with <code>--writable-tmpfs</code> until <code>config_extended.yaml</code> is written outside the install area. Either way, record the digest in provenance.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Agent design">
+        <article class="dec" data-area="GitLab and EWKit">
           <div class="id">D4</div>
           <div class="main">
-            <div class="top"><h3>Which TCT features does the authoring agent support?</h3><span class="area">Agent design</span><span class="when">by M5</span></div>
-            <p class="q">Phase 1 runs whatever valid YAML the user uploads, as long as it needs no custom code beyond the standard TCT image. This decision is about what the Phase 2 agent can draft, which drives the golden set.</p>
-            <p class="opts">Options: detector level only · detector plus particle level · all three levels including parton history · plus custom C++ algorithms.</p>
-            <p class="lean"><strong>Leaning:</strong> detector and particle level, standard blocks only. Parton history and custom code come after the Phase 2 pilot.</p>
+            <div class="top"><h3>Which refs may be run?</h3><span class="area">GitLab and EWKit</span><span class="when">by M1</span></div>
+            <p class="q">EWKit requires a clean, pushed tag for grid productions and puts the tag in output names. Protected <code>vX.Y</code> tags are created only by maintainers, but most recent tags are per analysis (<code>EFP_v6.6</code>, <code>EWK1L2L_v6.4</code>, <code>SlepWjetFF_v6.0</code>), and which prefix belongs to which folder is not written down.</p>
+            <p class="opts">Options: any branch, tag or commit · any tag for full productions and branches or commits for test runs · protected <code>vX.Y</code> tags only.</p>
+            <p class="lean"><strong>Leaning:</strong> follow EWKit's practice. Full productions need a tag, per-analysis tags included; branches and commits are allowed for test-sized runs, named with a test suffix as <code>--submissionTag</code> does today. The validator enforces this from the RunSpec's <code>purpose</code>, and a prefix-to-folder map lets the builder suggest likely tags.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Compute and data">
+        <article class="dec blocker" data-area="GitLab and EWKit">
           <div class="id">D5</div>
           <div class="main">
-            <div class="top"><h3>Is UChicago HTCondor the only execution backend?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
-            <p class="q">Large productions may be better suited to the grid via PanDA, which TCT supports with <code>submitToGrid.py</code>.</p>
-            <p class="opts">Options: UChicago AF only · AF plus PanDA from the start · AF now, a pluggable backend interface for later.</p>
-            <p class="lean"><strong>Leaning:</strong> AF only, with a backend interface kept in mind. The UChicago gateway makes AF the fastest path.</p>
+            <div class="top"><h3>Which GitLab credential does the service use to read EWKit?</h3><span class="area">GitLab and EWKit</span><span class="when">by M0</span></div>
+            <p class="q">The FastAPI service needs to list refs, read the <code>data/</code> tree and fetch files through the API.</p>
+            <p class="opts">Options: a project access token on EWKit (Reporter, <code>read_api</code>) · a group access token on the parent group · a CERN service account with a personal access token · per-user GitLab OAuth.</p>
+            <p class="lean"><strong>Leaning:</strong> a project access token created by an EWKit maintainer. It grants the least access, belongs to the project rather than a person, and maintainers can revoke it. Name an owner for yearly rotation.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Compute and data">
+        <article class="dec" data-area="GitLab and EWKit">
           <div class="id">D6</div>
           <div class="main">
-            <div class="top"><h3>How do jobs read their inputs?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
-            <p class="opts">Options: stream through XCache (<code>root://</code>) · replicate to <code>MWT2_UC_LOCALGROUPDISK</code> with a Rucio rule first · a mix decided per sample.</p>
-            <p class="lean"><strong>Leaning:</strong> XCache by default. Replication is an approved intervention for samples with poor replica availability, since it uses shared group quota.</p>
+            <div class="top"><h3>How does the app notice new commits and tags?</h3><span class="area">GitLab and EWKit</span><span class="when">by M1</span></div>
+            <p class="opts">Options: read refs on demand when someone opens the app · poll every few minutes · a project webhook, which needs a maintainer to configure and a network path from CERN to the hosting cluster.</p>
+            <p class="lean"><strong>Leaning:</strong> on demand plus light polling. It needs no change to EWKit's settings, and a few minutes of delay does not matter for productions.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="GitLab and EWKit">
+          <div class="id">D7</div>
+          <div class="main">
+            <div class="top"><h3>Does the app ever write to EWKit?</h3><span class="area">GitLab and EWKit</span><span class="when">by M4</span></div>
+            <p class="opts">Options: never · commit statuses showing AF runs on a commit · merge requests that update <code>data/&lt;Folder&gt;/ntuples/*.txt</code> after a production.</p>
+            <p class="lean"><strong>Leaning:</strong> read-only through the pilot. Afterwards, offer an opt-in merge request for the n-tuple lists, reviewed by the folder's code owners like any other change. That would need a token with write scope.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
+          <div class="id">D8</div>
+          <div class="main">
+            <div class="top"><h3>Who may start runs for an analysis?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="opts">Options: anyone who can sign in · the folder's code owners in <code>CODEOWNERS</code>, plus the default owners · an allow-list kept in the app.</p>
+            <p class="lean"><strong>Leaning:</strong> code owners plus explicitly added team members. <code>CODEOWNERS</code> is already maintained per folder, and CERN usernames match gitlab.cern.ch usernames. Anyone signed in can browse.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="GitLab and EWKit">
+          <div class="id">D9</div>
+          <div class="main">
+            <div class="top"><h3>What happens to folders that cannot run as they are?</h3><span class="area">GitLab and EWKit</span><span class="when">by M1</span></div>
+            <p class="q">On <code>master</code>, two folders have a config but no sample lists, and SUSYEWK1L2L needs TopCPToolkit, which the standard image does not include.</p>
+            <p class="opts">Options: hide them · show them with the reason they cannot run · let config-only folders borrow sample lists from the folder they extend, as an explicit choice.</p>
+            <p class="lean"><strong>Leaning:</strong> show them with the reason. Borrowing lists can come later if those teams ask for it. SUSYEWK1L2L needs an image that includes TopCPToolkit, to be discussed with its owners.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Compute and data">
-          <div class="id">D7</div>
+          <div class="id">D10</div>
           <div class="main">
-            <div class="top"><h3>Where do outputs go, and are they merged?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
-            <p class="opts">Options: <code>/data/&lt;user&gt;</code> (5 TB, not backed up) · registered in Rucio on LOCALGROUPDISK · object storage. Also: keep one file per job, or merge per sample with <code>hadd</code>.</p>
-            <p class="lean"><strong>Leaning:</strong> <code>/data/&lt;user&gt;</code> with a fixed directory convention, no merging in v1. Rucio registration is worth adding once outputs are shared within a group.</p>
+            <div class="top"><h3>UChicago HTCondor only, or PanDA too?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="q">EWKit productions run on the grid today. Supporting PanDA would meet users where they are, but changes what the monitor watches.</p>
+            <p class="opts">Options: AF HTCondor only · AF plus PanDA via <code>EWGridRun.py</code> from the start · AF now, with the run model designed so a PanDA backend can be added.</p>
+            <p class="lean"><strong>Leaning:</strong> AF now, PanDA-ready design. Keep dataset-level clusters and grid-style output names so a later PanDA backend fits without changing the UI or the data model.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Agent design">
-          <div class="id">D8</div>
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D11</div>
           <div class="main">
-            <div class="top"><h3>How is the TCT skill loaded inside LangGraph?</h3><span class="area">Agent design</span><span class="when">by M5</span></div>
-            <p class="q">Agent skills are designed for Claude Code and the Claude Agent SDK, which load them on demand. LangGraph does not do this natively.</p>
-            <p class="opts">Options: run a Claude Agent SDK sub-agent inside the authoring node, which loads skills natively · use the Claude API's skills support · read <code>SKILL.md</code> and its references into the prompt ourselves.</p>
-            <p class="lean"><strong>Leaning:</strong> Agent SDK sub-agent for authoring, pinned to a marketplace git SHA. It keeps progressive loading of the reference files and stays in sync with upstream.</p>
+            <div class="top"><h3>How do jobs read their inputs?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="opts">Options: stream through XCache (<code>root://</code>) · replicate to <code>MWT2_UC_LOCALGROUPDISK</code> with a Rucio rule first · decide per dataset.</p>
+            <p class="lean"><strong>Leaning:</strong> XCache by default. Full lists run to thousands of DAOD_PHYS datasets, far beyond the 15 TB group disk, so replication stays an approved exception.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Compute and data">
+          <div class="id">D12</div>
+          <div class="main">
+            <div class="top"><h3>Where do outputs go?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
+            <p class="q">The <code>ntuples/*.txt</code> lists and downstream tools expect Rucio dataset names.</p>
+            <p class="opts">Options: <code>/data/&lt;user&gt;</code> using EWGridRun's names (5 TB, not backed up) · register outputs as Rucio user datasets on LOCALGROUPDISK under the same names · both.</p>
+            <p class="lean"><strong>Leaning:</strong> <code>/data/&lt;user&gt;</code> with EWGridRun names first. Add Rucio registration when a pilot team needs grid-style access, since it uses shared quota.</p>
           </div>
         </article>
 
         <article class="dec blocker" data-area="Identity and security">
-          <div class="id">D9</div>
+          <div class="id">D13</div>
           <div class="main">
-            <div class="top"><h3>May ATLAS metadata and logs go to a hosted model API?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
-            <p class="q">Dataset names, configs and job logs would be sent to the model provider. ATLAS data-handling policy may restrict this.</p>
-            <p class="opts">Options: hosted Claude API under an institutional agreement · Claude through a cloud provider with a data-residency commitment · a self-hosted open model for some or all stages.</p>
-            <p class="lean"><strong>Leaning:</strong> confirm with ATLAS computing coordination before the monitor starts sending job logs to a model in M2. The architecture keeps the model behind one interface so the choice can change.</p>
+            <div class="top"><h3>May dataset names and job logs go to a hosted model API?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
+            <p class="q">Dataset names, config excerpts and job logs would be sent to the model provider. ATLAS data-handling policy may restrict this. With the run setup agents, dataset names and configs go to the model from M1; job logs follow in M2.</p>
+            <p class="opts">Options: hosted Claude API under an institutional agreement · Claude through a cloud provider with a data-residency commitment · a self-hosted open model.</p>
+            <p class="lean"><strong>Leaning:</strong> confirm with ATLAS computing coordination during M0, since repository content reaches the model in M1 and logs in M2. The model sits behind one interface so the choice can change.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Agent design">
-          <div class="id">D10</div>
+          <div class="id">D14</div>
           <div class="main">
-            <div class="top"><h3>Which models for which stages, and at what budget?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
-            <p class="opts">Options: one strong model everywhere · a strong model for authoring and diagnosis, a small fast model for log triage and summaries.</p>
-            <p class="lean"><strong>Leaning:</strong> tiered. In Phase 1 the only model use is monitor diagnosis. Most checks never call a model at all; those that do mostly need summarising. Set a per-production token budget alongside the core-hour cap.</p>
+            <div class="top"><h3>Which models, and at what budget?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
+            <p class="opts">Options: one strong model everywhere · a strong model for diagnosis and a small fast model for log triage and summaries.</p>
+            <p class="lean"><strong>Leaning:</strong> tiered. Models are used in run setup, called once or twice per setup, and in the monitor, where most checks never call a model at all. Set a per-run token budget alongside the core-hour cap.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Operations">
-          <div class="id">D11</div>
+          <div class="id">D15</div>
           <div class="main">
             <div class="top"><h3>Where do the agent service and web app run?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
-            <p class="opts">Options for where: AF Kubernetes at UChicago · CERN's OpenShift platform · an IRIS-HEP or institutional cluster · LangChain's managed cloud. Options for how: LangGraph's Agent Server (standalone production use needs a LangSmith license) · our own FastAPI service with LangGraph as a library and a Postgres checkpointer.</p>
-            <p class="lean"><strong>Leaning:</strong> our own FastAPI service on AF Kubernetes, close to the MCP gateway, as described under Deployment. It needs no license, keeps data on facility infrastructure, and hosts the GitLab webhook and REST API we need anyway. CERN OpenShift is the fallback if AF cannot host services or webhooks cannot reach it.</p>
+            <p class="opts">Where: AF Kubernetes at UChicago · CERN's OpenShift platform · an IRIS-HEP or institutional cluster. How: LangGraph's Agent Server (production self-hosting needs a LangSmith license) · our own FastAPI service with LangGraph as a library.</p>
+            <p class="lean"><strong>Leaning:</strong> our own FastAPI service on AF Kubernetes, close to the MCP gateway, as described under Deployment. CERN OpenShift is the fallback if AF cannot host services.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Agent design">
-          <div class="id">D12</div>
+          <div class="id">D16</div>
           <div class="main">
             <div class="top"><h3>How does the monitor observe jobs?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
             <p class="q">AF guidance warns against hammering the schedd with frequent <code>condor_q</code> calls.</p>
-            <p class="opts">Options: periodic queue queries through MCP at a fixed interval · read the HTCondor user job event log through the filesystem tools · facility metrics such as Prometheus, if exposed.</p>
+            <p class="opts">Options: periodic queue queries through MCP · read the HTCondor job event log through the filesystem tools · facility metrics such as Prometheus, if exposed.</p>
             <p class="lean"><strong>Leaning:</strong> event log as the primary signal, with a queue query every few minutes to reconcile. Agree an interval with AF operators.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Product and UX">
-          <div class="id">D13</div>
-          <div class="main">
-            <div class="top"><h3>How are people told an approval is waiting?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
-            <p class="opts">Options: in-app only · email · Mattermost or Slack · CERN Notifications. Also: should approvals expire, and what happens when they do?</p>
-            <p class="lean"><strong>Leaning:</strong> in-app plus email, with a chat integration if the pilot group wants one. Approvals expire when the evidence goes stale, and the agent re-proposes on the next check.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Product and UX">
-          <div class="id">D14</div>
-          <div class="main">
-            <div class="top"><h3>Who may approve?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
-            <p class="opts">Options: only the requester · the requester or named delegates · anyone in the analysis group · conveners for high-risk actions such as group-quota replication.</p>
-            <p class="lean"><strong>Leaning:</strong> requester plus named delegates, so a production is not stuck while one person travels. High-risk actions may need a second approver.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Agent design">
-          <div class="id">D15</div>
-          <div class="main">
-            <div class="top"><h3>How much may the agent do without asking?</h3><span class="area">Agent design</span><span class="when">by M3</span></div>
-            <p class="opts">Options: nothing, every action needs approval · a single identical retry of failed jobs is automatic · a per-user setting that widens the automatic set over time.</p>
-            <p class="lean"><strong>Leaning:</strong> one automatic identical retry, everything else approved. Revisit after the pilot with acceptance-rate data.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Product and UX">
-          <div class="id">D16</div>
-          <div class="main">
-            <div class="top"><h3>Is a test job mandatory before every launch?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
-            <p class="opts">Options: always · only for new or changed configs · user's choice.</p>
-            <p class="lean"><strong>Leaning:</strong> always for a new config version; skippable when rerunning an already-validated config on new samples of the same type.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Product and UX">
           <div class="id">D17</div>
           <div class="main">
-            <div class="top"><h3>Single user or multi-user from the start?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
-            <p class="opts">Options: one physicist's tool first · multi-user with per-user isolation · group workspaces where productions are shared.</p>
-            <p class="lean"><strong>Leaning:</strong> design the data model for multiple users from day one, but pilot with a handful of people. Group sharing waits for M7.</p>
+            <div class="top"><h3>How are people told an approval is waiting?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
+            <p class="opts">Options: in-app only · email · Mattermost, where EWKit already has a channel · CERN Notifications.</p>
+            <p class="lean"><strong>Leaning:</strong> in-app plus email, with direct Mattermost messages as an option. Approvals expire when the evidence goes stale, and the agent re-proposes on the next check.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Identity and security">
+        <article class="dec" data-area="Product and UX">
           <div class="id">D18</div>
           <div class="main">
-            <div class="top"><h3>How do people sign in to the web app?</h3><span class="area">Identity and security</span><span class="when">by M1</span></div>
-            <p class="opts">Options: CERN SSO · CILogon · the AF's existing login · reuse the MCP portal's identity directly.</p>
-            <p class="lean"><strong>Leaning:</strong> whatever identity the MCP broker uses, so one login covers both the app and the delegated MCP session. If that is CERN SSO, it also matches gitlab.cern.ch accounts. Depends on D1.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Operations">
-          <div class="id">D19</div>
-          <div class="main">
-            <div class="top"><h3>What provenance is recorded, and where?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
-            <p class="opts">Options: a JSON file next to the outputs · in the app database only · attached as Rucio metadata when outputs are registered.</p>
-            <p class="lean"><strong>Leaning:</strong> JSON next to the outputs and a copy in the database, holding the GitLab project and commit SHA, TCT tag, AnalysisBase release, sample list, model IDs and approvals, plus the skill SHA once configs are drafted in Phase 2.</p>
+            <div class="top"><h3>Who may approve gates and interventions?</h3><span class="area">Product and UX</span><span class="when">by M3</span></div>
+            <p class="opts">Options: only the person who started the run · the run owner or the folder's code owners · a second approver for high-risk actions.</p>
+            <p class="lean"><strong>Leaning:</strong> run owner or any code owner of the folder, so a production is not stuck while one person travels. Group-quota replication needs a second approver.</p>
           </div>
         </article>
 
         <article class="dec" data-area="Agent design">
+          <div class="id">D19</div>
+          <div class="main">
+            <div class="top"><h3>How much may the agent do without asking?</h3><span class="area">Agent design</span><span class="when">by M3</span></div>
+            <p class="opts">Options: nothing · a single identical retry of failed jobs · a per-analysis setting that widens the automatic set over time.</p>
+            <p class="lean"><strong>Leaning:</strong> one automatic identical retry, everything else approved. Revisit after the pilot with acceptance-rate data.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Product and UX">
           <div class="id">D20</div>
           <div class="main">
-            <div class="top"><h3>When does a production count as done?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
-            <p class="q">Some files may never succeed, for example a corrupt input.</p>
-            <p class="opts">Options: require 100% of files · accept a threshold such as 99.5% with an explicit exclusion list · always ask the requester.</p>
-            <p class="lean"><strong>Leaning:</strong> the agent proposes completion with an exclusion list and the normalisation impact; the requester approves. No silent partial deliveries.</p>
+            <div class="top"><h3>Is a test job mandatory before every launch?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="q">EWKit's CI already runs each main analysis on example files, but on fixed ttbar and data inputs with 10,000 events, not on the run's own datasets.</p>
+            <p class="opts">Options: always · only for a commit or option set not yet tested on the AF · user's choice.</p>
+            <p class="lean"><strong>Leaning:</strong> required once per commit, config file and option set. Reruns of the same combination on other sample lists skip it.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Operations">
+        <article class="dec" data-area="Identity and security">
           <div class="id">D21</div>
           <div class="main">
-            <div class="top"><h3>Where does the project live and who maintains it?</h3><span class="area">Operations</span><span class="when">by M4</span></div>
-            <p class="opts">Options: an IRIS-HEP repository · under usatlas alongside the marketplace · split, with improvements to the skill and gateway contributed upstream.</p>
-            <p class="lean"><strong>Leaning:</strong> application in an IRIS-HEP repository; skill fixes and new HTCondor tools contributed to the usatlas marketplace and the AF gateway.</p>
+            <div class="top"><h3>How do people sign in to the web app?</h3><span class="area">Identity and security</span><span class="when">by M1</span></div>
+            <p class="opts">Options: CERN SSO · CILogon · the AF's existing login · the MCP portal's identity.</p>
+            <p class="lean"><strong>Leaning:</strong> whatever identity the MCP broker uses, so one login covers the app and the delegated MCP session. CERN SSO also gives the username needed to match <code>CODEOWNERS</code> (D8).</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Product and UX">
+        <article class="dec" data-area="Operations">
           <div class="id">D22</div>
           <div class="main">
-            <div class="top"><h3>Which frontend framework?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
-            <p class="q">CopilotKit's first-class SDKs are React and Angular. The hooks this design relies on (<code>useCoAgent</code>, <code>useLangGraphInterrupt</code>) and the prebuilt chat UI are React components. Svelte and Vue have community adapters only. The CopilotKit runtime and the AG-UI protocol work with any frontend.</p>
-            <p class="opts">Options: React with Next.js · React with Vite (no server rendering needed) · SvelteKit talking AG-UI directly through the framework-agnostic <code>@ag-ui/client</code>, building our own chat panel and approval cards · Angular.</p>
-            <p class="lean"><strong>Leaning:</strong> React, because CopilotKit's interrupt and shared-state features come ready-made. Next.js itself is not required. SvelteKit is viable if the team's Svelte experience outweighs rebuilding the chat and interrupt UI, which adds frontend work to M1 and M3. With Next.js the CopilotKit runtime lives in the same container as the pages; a Vite build needs a separate small Node runtime container.</p>
+            <div class="top"><h3>What provenance is recorded, and where?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
+            <p class="opts">Options: a JSON file next to the outputs · in the app database only · attached as Rucio metadata when outputs are registered.</p>
+            <p class="lean"><strong>Leaning:</strong> JSON next to the outputs plus a database copy: EWKit commit and tag, image digest, AnalysisBase release, analysis, config file, run options, dataset list, model IDs and approvals.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Compute and data">
+        <article class="dec" data-area="Agent design">
           <div class="id">D23</div>
           <div class="main">
-            <div class="top"><h3>What format does the replica list take?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
-            <p class="q">Phase 1 depends on users supplying their inputs. The format decides how much the system can check, and whether Phase 2 discovery can produce it directly.</p>
-            <p class="opts">Options: TCT-style <code>inputs.txt</code> files, one per sample, with one file path or <code>root://</code> URL per line · a list of Rucio dataset or container names that the system expands read-only · a small YAML manifest with sample name, DSID, campaign and either names or file paths per row.</p>
-            <p class="lean"><strong>Leaning:</strong> the YAML manifest, with Rucio names preferred over raw paths. Names let the system pick XCache paths, check completeness and read event counts. Raw paths are accepted as a fallback, with DSID and campaign then inferred from file names and confirmed by the user. It is committed as <code>samples.yaml</code>, and Phase 2 discovery would emit the same file.</p>
+            <div class="top"><h3>When does a production count as done?</h3><span class="area">Agent design</span><span class="when">by M2</span></div>
+            <p class="opts">Options: require 100% of files · accept a threshold with an explicit exclusion list · always ask.</p>
+            <p class="lean"><strong>Leaning:</strong> the agent proposes completion with an exclusion list and its effect on normalisation; the run owner approves. <code>get_ntuples.py</code> already treats missing n-tuples as an error unless <code>--allowMissing</code> is given, and the app should be as strict.</p>
           </div>
         </article>
 
-        <article class="dec" data-area="Product and UX">
+        <article class="dec" data-area="Operations">
           <div class="id">D24</div>
           <div class="main">
-            <div class="top"><h3>What starts a production from GitLab?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
-            <p class="q">Starting a production spends many core-hours, so it should be a deliberate act, not a side effect of every push.</p>
-            <p class="opts">Options: every push to a watched branch · merging to the default branch · pushing a tag that matches a pattern such as <code>prod/*</code> · choosing a commit in the web app.</p>
-            <p class="lean"><strong>Leaning:</strong> a tag or a web-app choice, both leading to Gate B. Plain pushes only run input checks and report a commit status.</p>
-          </div>
-        </article>
-
-        <article class="dec blocker" data-area="Identity and security">
-          <div class="id">D25</div>
-          <div class="main">
-            <div class="top"><h3>Which GitLab, and how does the service connect to it?</h3><span class="area">Identity and security</span><span class="when">by M0</span></div>
-            <p class="q">The service needs to read repositories, post commit statuses, and in Phase 2 push branches and open merge requests. Webhooks also need a network path from GitLab to the agent service.</p>
-            <p class="opts">Options for the instance: gitlab.cern.ch, where TopCPToolkit itself lives · an institutional GitLab. Options for access: a project access token each analysis adds · a GitLab OAuth application acting as the user · a bot account added to projects. Options for notifications: webhooks · polling · both.</p>
-            <p class="lean"><strong>Leaning:</strong> gitlab.cern.ch with OAuth acting as the user, so commit statuses and merge requests are attributed to them. Webhooks with polling as a fallback, since the network path from CERN to AF Kubernetes needs confirming.</p>
-          </div>
-        </article>
-
-        <article class="dec" data-area="Compute and data">
-          <div class="id">D26</div>
-          <div class="main">
-            <div class="top"><h3>Where do the input checks run?</h3><span class="area">Compute and data</span><span class="when">by M1</span></div>
-            <p class="opts">Options: all in the agent service · all in GitLab CI · split, with cheap checks in CI and Rucio resolution in the agent service.</p>
-            <p class="lean"><strong>Leaning:</strong> split. A CI template gives instant feedback on YAML and manifest errors in the merge request. Rucio resolution stays in the agent service because it needs the MCP broker's per-user credentials, which CI runners do not have.</p>
+            <div class="top"><h3>Where does the project live and who maintains it?</h3><span class="area">Operations</span><span class="when">by M4</span></div>
+            <p class="opts">Options: an IRIS-HEP repository · inside the EWK group on gitlab.cern.ch next to EWKit · split, with small helpers contributed to EWKit.</p>
+            <p class="lean"><strong>Leaning:</strong> the app in its own repository on gitlab.cern.ch, so EWKit maintainers can see and contribute. Shared helpers such as the campaign map go upstream to EWKit (D27).</p>
           </div>
         </article>
 
         <article class="dec" data-area="Product and UX">
-          <div class="id">D27</div>
+          <div class="id">D25</div>
           <div class="main">
-            <div class="top"><h3>In Phase 2, is Gate A a GitLab merge request approval?</h3><span class="area">Product and UX</span><span class="when">by M5</span></div>
-            <p class="opts">Options: review and approve in the web app, which then commits · approve the merge request in GitLab, mirrored in the web app · either, kept in sync.</p>
-            <p class="lean"><strong>Leaning:</strong> the merge request is the record of approval, with the web app showing the agent's rationale next to the diff. Physicists already review configs this way.</p>
+            <div class="top"><h3>Which frontend framework?</h3><span class="area">Product and UX</span><span class="when">by M1</span></div>
+            <p class="q">CopilotKit's first-class SDKs are React and Angular; the hooks this design relies on are React components. Svelte and Vue have community adapters only.</p>
+            <p class="opts">Options: React with Next.js · React with Vite · SvelteKit talking AG-UI through <code>@ag-ui/client</code> with our own chat and approval UI · Angular.</p>
+            <p class="lean"><strong>Leaning:</strong> React with Next.js, so the CopilotKit runtime shares the web container. SvelteKit is viable if the team's Svelte experience outweighs rebuilding the chat and interrupt UI.</p>
           </div>
         </article>
+
         <article class="dec" data-area="Operations">
-          <div class="id">D28</div>
+          <div class="id">D26</div>
           <div class="main">
             <div class="top"><h3>How are releases deployed?</h3><span class="area">Operations</span><span class="when">by M1</span></div>
-            <p class="opts">Options: a Helm chart applied from GitLab CI · Kustomize overlays applied from GitLab CI · Argo CD or Flux syncing from a deployment repository · whatever the hosting cluster's operators already use.</p>
-            <p class="lean"><strong>Leaning:</strong> follow the hosting cluster's existing practice. If there is none, a Helm chart deployed from GitLab CI, which keeps the number of new tools small.</p>
+            <p class="opts">Options: a Helm chart from GitLab CI · Kustomize overlays from GitLab CI · Argo CD or Flux · whatever the hosting cluster's operators already use.</p>
+            <p class="lean"><strong>Leaning:</strong> follow the hosting cluster's practice; otherwise a Helm chart deployed from GitLab CI.</p>
           </div>
         </article>
+
+        <article class="dec" data-area="GitLab and EWKit">
+          <div class="id">D27</div>
+          <div class="main">
+            <div class="top"><h3>How does the app stay in step with EWKit's own logic?</h3><span class="area">GitLab and EWKit</span><span class="when">by M1</span></div>
+            <p class="q">Campaign mapping and output naming live in EWKit's Python, which needs the ATLAS environment to import. EWKit already keeps the r-tag map in two places.</p>
+            <p class="opts">Options: reimplement in the app with tests against EWKit's code · run EWKit's own helpers inside the EWKit image as a planning job · contribute a small dependency-free module to EWKit that both use.</p>
+            <p class="lean"><strong>Leaning:</strong> reimplement for M1 with a test that compares against EWKit's map at each tag, and propose the shared module to the maintainers.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D28</div>
+          <div class="main">
+            <div class="top"><h3>How do the builder agent and the Run setup form fit together?</h3><span class="area">Agent design</span><span class="when">by M1</span></div>
+            <p class="q">Some people will want to describe a run in words; others will want to set the options directly, as they do with <code>EWGridRun.py</code>.</p>
+            <p class="opts">Options: form only, with the reviewer · builder chat only · both, with the form as the one editor of the RunSpec and the builder filling it in.</p>
+            <p class="lean"><strong>Leaning:</strong> both. The form is the RunSpec and the record of what will run; the builder only fills it in, and the person can edit any field afterwards. The validator and reviewer treat a hand-filled spec and a drafted one the same way.</p>
+          </div>
+        </article>
+
+        <article class="dec" data-area="Agent design">
+          <div class="id">D29</div>
+          <div class="main">
+            <div class="top"><h3>What does the reviewer see of the builder's work?</h3><span class="area">Agent design</span><span class="when">by M1</span></div>
+            <p class="q">A reviewer that reads the builder's reasoning tends to agree with it. One that sees only the request and the spec judges the spec on its merits, but may repeat questions the builder already settled.</p>
+            <p class="opts">Options: the full builder conversation · the RunSpec and the builder's stated assumptions · the request and the RunSpec only.</p>
+            <p class="lean"><strong>Leaning:</strong> the request, the RunSpec and the validator report only. The builder's assumptions are shown to the person, who is the one who settles them. Revisit if evaluation shows the reviewer repeating settled questions.</p>
+          </div>
+        </article>
+
       </div>
     </section>
 
     <section id="confirm">
-      <h2>Questions for UChicago AF</h2>
-      <div class="prose"><p>Several decisions depend on facts only the AF team can confirm. These belong on the agenda for a first meeting.</p></div>
-      <div class="panel" style="max-width:820px">
-        <ul>
-          <li>Which HTCondor operations does the <code>atlas-af</code> gateway expose today, and with what names? Can it submit, edit, release, remove, and read job logs?</li>
-          <li>Can the broker mint the x509 proxy that jobs need for XCache and Rucio reads, or must the user keep a proxy in <code>$HOME</code>?</li>
-          <li>Do the Rucio tools expose per-file event counts, so Phase 1 can check completeness without AMI?</li>
-          <li>Does the broker support a long-lived, refreshable delegation suitable for an agent acting over several days?</li>
-          <li>What polling rate and concurrency are acceptable against the schedd and the gateway?</li>
-          <li>May a facility-hosted service run on AF Kubernetes and call the gateway on users' behalf? Is there an ingress with single sign-on, and an existing deployment practice (Helm, Argo CD) we should follow?</li>
-          <li>Is there a preferred place to publish TCT container images that AF workers can read?</li>
-          <li>Are gateway audit logs available to us, to cross-check our own audit trail?</li>
-          <li>Can webhooks from gitlab.cern.ch reach a service on AF Kubernetes, or do we need to poll?</li>
-        </ul>
+      <h2>Open questions</h2>
+      <div class="two-col">
+        <div class="panel">
+          <h3>For the EWKit maintainers</h3>
+          <ul>
+            <li>Will you create a read-only project access token for the app, and who should own its rotation?</li>
+            <li>Is the container registry readable by AF workers, and would you publish tagged images to <code>/cvmfs/unpacked.cern.ch</code>?</li>
+            <li>Should AF productions follow the same tag policy as grid productions, including protected <code>vX.Y</code> tags?</li>
+            <li>Is <code>CODEOWNERS</code> the right source for who may run and approve each analysis?</li>
+            <li>Would you accept a small shared module for campaign mapping and output naming?</li>
+            <li>Is <code>share/submit_condor.py</code> still used anywhere?</li>
+            <li>What would SUSYEWK1L2L need to run, and is a TopCPToolkit-enabled image planned?</li>
+            <li>Do tag pushes get a CI pipeline and an image? The <code>workflow:</code> rules seem to admit only merge request and branch pipelines. Would you add a rule for tags?</li>
+            <li>Would you accept a change that writes <code>config_extended.yaml</code> to the working directory instead of the installed <code>data/</code> folder, so <code>Extend</code> configs run from a read-only image?</li>
+            <li>Which folder does each tag prefix belong to (<code>EFP</code>, <code>EWK1L2L</code>, <code>Slep</code>, <code>SlepWjetFF</code>, …)?</li>
+            <li>Which campaign is <code>r17610</code>, used by 38 datasets in <code>DiTauStudies/DAODs/Run3_bkg.txt</code>?</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>For the UChicago AF team</h3>
+          <ul>
+            <li>Which HTCondor operations does the <code>atlas-af</code> gateway expose, and with what names? Can it submit, edit, release, remove, and read job logs?</li>
+            <li>Can jobs run images from gitlab-registry.cern.ch through apptainer, with credentials if needed, or must images come from <code>/cvmfs/unpacked.cern.ch</code>?</li>
+            <li>Can the broker mint the x509 proxy that jobs need for XCache reads?</li>
+            <li>Does the broker support a long-lived, refreshable delegation for an agent acting over several days?</li>
+            <li>What polling rate is acceptable against the schedd and the gateway?</li>
+            <li>May a service on AF Kubernetes call the gateway on users' behalf? Is there an ingress with single sign-on and an existing deployment practice?</li>
+            <li>Do the Rucio tools expose per-file event counts for completeness checks?</li>
+          </ul>
+        </div>
       </div>
     </section>
 
     <section id="sources" class="sources">
       <h2 style="font-size:1.2rem">Sources</h2>
       <ul>
-        <li><a href="https://mcpmarket.com/tools/skills/topcptoolkit-atlas-analysis" target="_blank" rel="noopener">TopCPToolkit ATLAS analysis skill on MCP Market</a></li>
-        <li><a href="https://github.com/usatlas/marketplace" target="_blank" rel="noopener">usatlas/marketplace</a>: the <code>topcptoolkit</code> skill and the <code>af-uchicago</code> plugin with the <code>atlas-af</code> MCP server</li>
-        <li><a href="https://mcp-portal.af.uchicago.edu/" target="_blank" rel="noopener">UChicago AF MCP Platform portal</a></li>
-        <li><a href="https://usatlas.github.io/af-docs/uchicago/batch/" target="_blank" rel="noopener">UChicago AF batch documentation</a></li>
-        <li><a href="https://glama.ai/mcp/servers/kratsg/rucio-mcp" target="_blank" rel="noopener">rucio-mcp</a>, the Rucio MCP server behind the <code>rucio-atlas_*</code> tools</li>
-        <li><a href="https://docs.gitlab.com/user/project/integrations/webhooks/" target="_blank" rel="noopener">GitLab webhooks</a> and <a href="https://docs.gitlab.com/api/commits/#set-the-pipeline-status-of-a-commit" target="_blank" rel="noopener">commit status API</a></li>
+        <li><a href="https://gitlab.cern.ch/atlas-physics/hmbs/ewk/EWKit" target="_blank" rel="noopener">EWKit on gitlab.cern.ch</a>, read locally at commit <code>17c998c</code>: README, <code>.gitlab-ci.yml</code>, <code>Dockerfile</code>, <code>python/EWRunScript.py</code>, <code>share/EWGridRun.py</code>, <code>share/sample_helpers.py</code>, <code>share/submit_condor.py</code>, <code>CODEOWNERS</code> and <code>data/</code></li>
+        <li><a href="https://github.com/usatlas/marketplace" target="_blank" rel="noopener">usatlas/marketplace</a>: the <code>af-uchicago</code> plugin with the <code>atlas-af</code> MCP server</li>
+        <li><a href="https://mcp-portal.af.uchicago.edu/" target="_blank" rel="noopener">UChicago AF MCP Platform portal</a> and <a href="https://usatlas.github.io/af-docs/uchicago/batch/" target="_blank" rel="noopener">UChicago AF batch documentation</a></li>
+        <li><a href="https://docs.gitlab.com/user/project/settings/project_access_tokens/" target="_blank" rel="noopener">GitLab project access tokens</a> and <a href="https://docs.gitlab.com/user/project/deploy_tokens/" target="_blank" rel="noopener">deploy tokens</a></li>
         <li><a href="https://docs.langchain.com/langsmith/custom-routes" target="_blank" rel="noopener">LangGraph Agent Server custom routes</a> and <a href="https://docs.langchain.com/langgraph-platform" target="_blank" rel="noopener">deployment options</a></li>
-        <li><a href="https://docs.langchain.com/oss/python/langchain/frontend/integrations/copilotkit" target="_blank" rel="noopener">CopilotKit integration with LangGraph</a></li>
-        <li><a href="https://topcptoolkit.docs.cern.ch/latest/settings/" target="_blank" rel="noopener">TopCPToolkit settings documentation</a></li>
-        <li><a href="https://docs.copilotkit.ai/integrations/langgraph/human-in-the-loop/prebuilt-agents" target="_blank" rel="noopener">CopilotKit LangGraph human-in-the-loop</a> and <a href="https://docs.copilotkit.ai/reference/hooks/useLangGraphInterrupt" target="_blank" rel="noopener">useLangGraphInterrupt</a></li>
+        <li><a href="https://docs.langchain.com/oss/python/langchain/frontend/integrations/copilotkit" target="_blank" rel="noopener">CopilotKit integration with LangGraph</a> and <a href="https://docs.copilotkit.ai/reference/hooks/useLangGraphInterrupt" target="_blank" rel="noopener">useLangGraphInterrupt</a></li>
+        <li><a href="https://topcptoolkit.docs.cern.ch/latest/settings/" target="_blank" rel="noopener">CP algorithm YAML settings</a> (TopCPToolkit docs, which EWKit's README points to) and the <a href="https://mcpmarket.com/tools/skills/topcptoolkit-atlas-analysis" target="_blank" rel="noopener">TopCPToolkit skill</a>, kept for later config work</li>
       </ul>
     </section>
 
-    <footer>Draft for discussion. Tool names and limits were taken from public documentation in October 2026 and should be confirmed during M0.</footer>
+    <footer>Draft for discussion. EWKit facts reflect <code>master</code> at <code>17c998c</code>; facility tool names and limits come from public documentation in October 2026 and should be confirmed during M0.</footer>
   </main>
 </div>
+
 
 <script>
 (function () {
