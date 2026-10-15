@@ -27,7 +27,7 @@ DEFAULT_PROMPT = f"prompts:/{seeding.PROMPT_NAME}@{seeding.PROMPT_ALIAS}"
 
 
 def _agent_config(args) -> tuple:
-    """Load the prompt, MCP tools and agent named by the command-line options."""
+    """Load the prompt and MCP tools named by the command-line options, and a factory for the agent."""
     prompt = mlflow.genai.load_prompt(args.prompt, link_to_model=False)
     connections = load_mcp_connections(args.mcp_config, args.server)
     tools = asyncio.run(load_tools(connections, args.tools, args.allow_writes))
@@ -44,7 +44,7 @@ def _agent_config(args) -> tuple:
         "allow_writes": str(args.allow_writes),
         "max_steps": str(args.max_steps),
     }
-    return prompt, tools, build_agent(args.model, system_prompt, tools), params
+    return prompt, tools, lambda client: build_agent(args.model, system_prompt, tools, client), params
 
 
 def _activate_model(prompt, params: dict) -> str:
@@ -73,28 +73,42 @@ def cmd_seed(args) -> None:
 
 def cmd_ask(args) -> None:
     mlflow.langchain.autolog()
-    prompt, tools, agent, params = _agent_config(args)
+    prompt, tools, make_agent, params = _agent_config(args)
     _activate_model(prompt, params)
     print(f"tools: {params['tools']}", file=sys.stderr)
-    answer = asyncio.run(make_predict_fn(agent, args.max_steps)(args.question))
+    answer = asyncio.run(make_predict_fn(make_agent, args.max_steps)(args.question))
     print(answer)
     print(f"\ntrace: {mlflow.get_last_active_trace_id()}", file=sys.stderr)
+
+
+def _load_dataset(name_or_id: str, experiment: str):
+    """An evaluation dataset by ID (d-...) or by name within the experiment."""
+    if re.fullmatch(r"d-[0-9a-f]{32}", name_or_id):
+        return datasets.get_dataset(dataset_id=name_or_id)
+    experiment_id = mlflow.get_experiment_by_name(experiment).experiment_id
+    dataset = seeding.find_dataset(name_or_id, experiment_id)
+    if dataset is None:
+        raise ConfigError(f"No dataset {name_or_id!r} in experiment {experiment!r}; run `harness seed` or pass --dataset")
+    return dataset
 
 
 def cmd_eval(args) -> None:
     # Each worker runs a full agent with MCP calls; keep the gateway and the LLM endpoint unflooded
     os.environ.setdefault("MLFLOW_GENAI_EVAL_MAX_WORKERS", str(args.workers))
+    dataset = _load_dataset(args.dataset, args.experiment)
     mlflow.langchain.autolog()
-    prompt, tools, agent, params = _agent_config(args)
+    # evaluate() turns on tracing for every installed library that isn't explicitly disabled. The
+    # LangChain spans already cover each LLM call; OpenAI's would add a second, orphaned trace.
+    mlflow.openai.autolog(disable=True)
+    prompt, tools, make_agent, params = _agent_config(args)
     model_id = _activate_model(prompt, params)
-    dataset = datasets.get_dataset(name=args.dataset)
     scorers = default_scorers() + (judge_scorers(args.judge_model or args.model) if args.judge else [])
 
     run_name = f"{params['agent']}-p{prompt.version}-{args.model}"
     with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_params({**params, "dataset": args.dataset, "dataset_digest": dataset.digest})
         result = mlflow.genai.evaluate(
-            data=dataset, predict_fn=make_predict_fn(agent, args.max_steps), scorers=scorers, model_id=model_id
+            data=dataset, predict_fn=make_predict_fn(make_agent, args.max_steps), scorers=scorers, model_id=model_id
         )
 
     print(f"\nrun {run.info.run_id} ({run_name})")
@@ -148,7 +162,7 @@ def main(argv: list[str] | None = None) -> None:
 
     evaluate = sub.add_parser("eval", help="evaluate the agent on an MLflow dataset")
     evaluate.add_argument(
-        "--dataset", default=seeding.DATASET_NAME, help="MLflow evaluation dataset (default: %(default)s)"
+        "--dataset", default=seeding.DATASET_NAME, help="MLflow evaluation dataset name or ID (default: %(default)s)"
     )
     evaluate.add_argument("--judge", action="store_true", help="add MLflow's LLM-judged Correctness scorer")
     evaluate.add_argument("--judge-model", help="model for --judge (default: --model)")
