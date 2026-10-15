@@ -62,10 +62,20 @@ def seed_prompt() -> str:
     return f"registered prompt {PROMPT_NAME} v{version.version} as @{PROMPT_ALIAS}"
 
 
+def find_dataset(name: str, experiment_id: str):
+    """The dataset called `name` in the experiment, or None.
+
+    Searches are scoped to the experiment: servers with permissions enabled reject an unscoped
+    dataset search, which is what datasets.get_dataset(name=...) does.
+    """
+    found = datasets.search_datasets(experiment_ids=[experiment_id], filter_string=f"name = '{name}'")
+    return found[0] if found else None
+
+
 def seed_dataset(experiment_id: str) -> str:
-    found = datasets.search_datasets(experiment_ids=[experiment_id], filter_string=f"name = '{DATASET_NAME}'")
-    if found:
-        return f"dataset {DATASET_NAME} exists ({found[0].dataset_id}); left alone"
+    found = find_dataset(DATASET_NAME, experiment_id)
+    if found is not None:
+        return f"dataset {DATASET_NAME} exists ({found.dataset_id}); left alone"
     dataset = datasets.create_dataset(name=DATASET_NAME, experiment_id=[experiment_id], tags={"agent": "fs-explorer"})
     dataset.merge_records(QUESTIONS)
     return f"created dataset {DATASET_NAME} ({dataset.dataset_id}) with {len(QUESTIONS)} questions"
