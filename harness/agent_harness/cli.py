@@ -7,6 +7,8 @@ changing any of them shows up as a new, comparable run in the experiment.
 import argparse
 import asyncio
 import getpass
+import hashlib
+import json
 import os
 import re
 import sys
@@ -46,10 +48,18 @@ def _agent_config(args) -> tuple:
 
 
 def _activate_model(prompt, params: dict) -> str:
-    """One MLflow LoggedModel per agent configuration, so traces and results group by version."""
-    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{params['agent']}-p{prompt.version}-{params['llm_model']}")
-    model_id = mlflow.set_active_model(name=name).model_id
-    mlflow.log_model_params(params, model_id=model_id)
+    """One MLflow LoggedModel per agent configuration, so traces and results group by version.
+
+    LoggedModel params are immutable, so the name carries a hash of the whole configuration: any
+    change (tools, steps, ...) gets a new model, and an unchanged one reuses the existing model.
+    """
+    # The prompt URI may be an alias; the resolved version is what identifies the configuration
+    config = {k: v for k, v in params.items() if k != "prompt_uri"}
+    digest = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:8]
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{params['agent']}-p{prompt.version}-{params['llm_model']}-{digest}")
+    existing = mlflow.search_logged_models(filter_string=f"name = '{name}'", max_results=1, output_format="list")
+    model = existing[0] if existing else mlflow.create_external_model(name=name, params=config, model_type="agent")
+    model_id = mlflow.set_active_model(model_id=model.model_id).model_id
     # Loading again links this prompt version to the model in the UI
     mlflow.genai.load_prompt(f"prompts:/{prompt.name}/{prompt.version}", model_id=model_id)
     return model_id
