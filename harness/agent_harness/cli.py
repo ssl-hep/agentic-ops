@@ -126,7 +126,7 @@ def _agent_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tools",
         nargs="+",
-        default=["fs_*"],
+        default=["fs_*", "rucio_list*", "rucio_get*"],
         metavar="GLOB",
         help="MCP tool name globs the agent may use (default: fs_*)",
     )
