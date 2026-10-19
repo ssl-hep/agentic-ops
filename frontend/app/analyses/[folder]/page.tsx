@@ -41,6 +41,11 @@ export default async function AnalysisPage(props: PageProps<"/analyses/[folder]"
           {a.code_owners.length > 0 && <> · code owners {a.code_owners.join(" ")}</>}
           {a.ntuple_lists.length > 0 && <> · {a.ntuple_lists.length} n-tuple lists</>}
         </p>
+        <p className="page-actions">
+          <Link href={href(`/analyses/${encodeURIComponent(a.folder)}/run`, { ref: gitRef })} className="button-link">
+            Configure run
+          </Link>
+        </p>
       </header>
       <RefBar action={analysisHref(a.folder)} refs={refs} resolved={data.ref} image={data.image} />
 
