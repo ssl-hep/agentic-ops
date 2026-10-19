@@ -6,7 +6,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.llm import gather_with_tools, structured
-from app.agents.prompts import dataset_builder_system
 from app.agents.tools import analysis_digest, evidence, repository_tools
 from app.repository import EWKitRepository
 from app.run_request import DatasetDraft
@@ -16,6 +15,7 @@ from app.settings import Settings
 
 async def draft_datasets(
     model: BaseChatModel,
+    system: str,
     settings: Settings,
     repo: EWKitRepository,
     resolved: ResolvedRef,
@@ -43,7 +43,7 @@ async def draft_datasets(
             )
         )
     messages = [
-        SystemMessage(content=dataset_builder_system()),
+        SystemMessage(content=system),
         HumanMessage(content="Request from the person:\n" + request.strip() + "\n\n" + "\n\n".join(context)),
     ]
     messages = await gather_with_tools(

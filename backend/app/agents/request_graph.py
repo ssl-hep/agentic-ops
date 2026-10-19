@@ -24,7 +24,7 @@ from langgraph.types import Checkpointer, Command, interrupt
 from app.agents.dataset_builder import draft_datasets
 from app.agents.events import event, failed
 from app.agents.llm import AgentError, model_name
-from app.agents.prompts import DATASETS_PROMPT_VERSION
+from app.agents.prompts import DATASETS, PromptSource
 from app.gitlab import GitLabError
 from app.ops import SpecReadyService
 from app.repository import EWKitRepository, NotFoundError
@@ -39,6 +39,7 @@ RequestStatus = Literal["needs_input", "ready"]
 class RequestContext:
     repo: EWKitRepository
     settings: Settings
+    prompts: PromptSource
     builder: BaseChatModel | None
 
 
@@ -78,13 +79,14 @@ async def draft(state: RequestState, runtime: Runtime[RequestContext]) -> dict:
         return {}
     resolved = ResolvedRef.model_validate(state["resolved"])
     try:
+        system = await ctx.prompts.load(DATASETS)
         result = await draft_datasets(
-            ctx.builder, ctx.settings, ctx.repo, resolved, state["request"] or "", state.get("analysis_hint")
+            ctx.builder, system.text, ctx.settings, ctx.repo, resolved, state["request"] or "", state.get("analysis_hint")
         )
         datasets, problems = await expand(ctx.repo, resolved, result)
     except (AgentError, GitLabError) as exc:
         return failed(state, "Builder", exc)
-    model = {"model": model_name(ctx.settings, "builder"), "prompt_version": DATASETS_PROMPT_VERSION}
+    model = {"model": model_name(ctx.settings, "builder"), "prompt_version": system.version}
     return {
         "datasets": [d.model_dump() for d in datasets],
         "draft": {

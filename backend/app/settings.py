@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # json_schema needs OpenAI-style structured outputs
     llm_structured_output: StructuredOutputMethod = "function_calling"
 
+    # MLflow tracking server. The agents' system prompts come from its Prompt Registry (latest
+    # version, at every call), and every agent run is traced to the experiment. Basic-auth
+    # credentials can be embedded (https://user:pass@host) or given as the username and password.
+    mlflow_tracking_uri: SecretStr | None = None
+    mlflow_tracking_username: str | None = None
+    mlflow_tracking_password: SecretStr | None = None
+    mlflow_experiment: str = "ew-kit"
+
     # Postgres for LangGraph checkpoints; without it, run setups live in memory only
     database_url: SecretStr | None = None
 

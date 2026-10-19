@@ -131,7 +131,7 @@ def test_builder_and_reviewer(setup_client: TestClient) -> None:
     assert view["spec"]["systematics"] == "do"
     assert view["draft"]["reasons"] == {"runs": "The request asks for Run 3"}
     assert view["draft"]["model"] == "m"
-    assert view["models"]["reviewer"]["prompt_version"] == "reviewer-2"
+    assert view["models"]["reviewer"]["prompt_version"] == "ew-kit-reviewer/1"
 
     # Tool results reach the model wrapped as evidence
     tool_messages = [m for m in builder.calls[1] if isinstance(m, ToolMessage)]
@@ -212,7 +212,11 @@ def test_agents_status(setup_client: TestClient) -> None:
     assert body["enabled"] is False and body["builder_model"] is None
 
     app.dependency_overrides[get_settings] = lambda: settings(
-        llm_base_url="https://llm.example/v1", llm_model="big", llm_reviewer_model="small", llm_api_key="secret"
+        llm_base_url="https://llm.example/v1",
+        llm_model="big",
+        llm_reviewer_model="small",
+        llm_api_key="secret",
+        mlflow_tracking_uri="https://alice:s3cret@mlflow.example.org",
     )
     body = setup_client.get("/api/setups/agents").json()
     assert body == {
@@ -222,6 +226,8 @@ def test_agents_status(setup_client: TestClient) -> None:
         "reviewer_model": "small",
         "structured_output": "function_calling",
         "api_key_configured": True,
+        "mlflow_tracking_uri": "https://mlflow.example.org",
+        "mlflow_experiment": "ew-kit",
         "reachable": None,
         "detail": None,
     }

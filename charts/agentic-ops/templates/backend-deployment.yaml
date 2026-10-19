@@ -79,6 +79,26 @@ spec:
                   key: {{ .tokenKey }}
                   optional: true
             {{- end }}
+            {{- with .Values.mlflow }}
+            {{- if .trackingUri }}
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .trackingUri | quote }}
+            {{- end }}
+            - name: MLFLOW_EXPERIMENT
+              value: {{ .experiment | quote }}
+            - name: MLFLOW_TRACKING_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .usernameKey }}
+                  optional: true
+            - name: MLFLOW_TRACKING_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .passwordKey }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /healthz

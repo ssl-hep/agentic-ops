@@ -39,6 +39,18 @@ llm:
   existingSecret: agentic-ops-llm
   tokenKey: LLM_API_KEY
 
+## MLflow tracking server. The agents load their system prompts from its Prompt Registry
+## (the latest version, at every call) and trace every run to the experiment. The basic-auth
+## credentials are not part of the chart: create the Secret yourself (see "MLflow" in the
+## README). Without trackingUri the agents cannot load their prompts.
+mlflow:
+  ## Without credentials in it; they come from the Secret
+  trackingUri: "https://mlflow.servicex.ssl-hep.org"
+  experiment: ew-kit
+  existingSecret: agentic-ops-mlflow
+  usernameKey: MLFLOW_TRACKING_USERNAME
+  passwordKey: MLFLOW_TRACKING_PASSWORD
+
 backend:
   replicaCount: 1
   image:

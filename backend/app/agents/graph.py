@@ -25,7 +25,7 @@ from app.agents.builder import draft_spec
 from app.agents.events import event as _event
 from app.agents.events import failed as _failed
 from app.agents.llm import AgentError, model_name
-from app.agents.prompts import BUILDER_PROMPT_VERSION, REVIEWER_PROMPT_VERSION
+from app.agents.prompts import BUILDER, REVIEWER, PromptSource
 from app.agents.reviewer import review_spec
 from app.gitlab import GitLabError
 from app.repository import EWKitRepository, NotFoundError
@@ -41,6 +41,7 @@ SetupStatus = Literal["needs_input", "ready"]
 class SetupContext:
     repo: EWKitRepository
     settings: Settings
+    prompts: PromptSource
     builder: BaseChatModel | None
     reviewer: BaseChatModel | None
 
@@ -104,12 +105,13 @@ async def draft(state: SetupState, runtime: Runtime[SetupContext]) -> dict:
         return {}
     resolved = ResolvedRef.model_validate(state["resolved"])
     try:
+        system = await ctx.prompts.load(BUILDER)
         result = await draft_spec(
-            ctx.builder, ctx.settings, ctx.repo, resolved, state["request"] or "", state.get("analysis_hint")
+            ctx.builder, system.text, ctx.settings, ctx.repo, resolved, state["request"] or "", state.get("analysis_hint")
         )
     except (AgentError, GitLabError) as exc:
         return _failed(state, "Builder", exc)
-    model = {"model": model_name(ctx.settings, "builder"), "prompt_version": BUILDER_PROMPT_VERSION}
+    model = {"model": model_name(ctx.settings, "builder"), "prompt_version": system.version}
     return {
         "spec": result.spec.model_dump(),
         "draft": {
@@ -155,10 +157,13 @@ async def review(state: SetupState, runtime: Runtime[SetupContext]) -> dict:
     report = ValidationReport.model_validate(state["report"])
     resolved = ResolvedRef.model_validate(state["resolved"])
     try:
-        cards = await review_spec(ctx.reviewer, ctx.settings, ctx.repo, resolved, state.get("request"), spec, report)
+        system = await ctx.prompts.load(REVIEWER)
+        cards = await review_spec(
+            ctx.reviewer, system.text, ctx.settings, ctx.repo, resolved, state.get("request"), spec, report
+        )
     except (AgentError, GitLabError) as exc:
         return _failed(state, "Reviewer", exc)
-    model = {"model": model_name(ctx.settings, "reviewer"), "prompt_version": REVIEWER_PROMPT_VERSION}
+    model = {"model": model_name(ctx.settings, "reviewer"), "prompt_version": system.version}
     return {
         "issues": [c.model_dump() for c in cards],
         "models": {**state.get("models", {}), "reviewer": model},

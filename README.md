@@ -97,7 +97,8 @@ The form is the one editor of the spec; the builder only fills it in. Neither ag
 EWKit, edit configs or sample lists, or decide that a check passed. Repository text reaches the
 models only inside `<evidence>` blocks. The model, the prompt versions and every accepted or
 dismissed patch are kept in the setup's history. Without a model endpoint the agents are off,
-and the form and validator work the same way.
+and the form and validator work the same way. The agents' system prompts come from MLflow, and
+every run is traced there (see [MLflow](#mlflow)).
 
 Validator finding codes:
 
@@ -114,7 +115,7 @@ in memory otherwise, so local setups without a database are lost when the backen
 
 | Endpoint | Does |
 |----------|------|
-| `GET /api/setups/agents` | Whether the agents are on, and which endpoint and models they use; `?check=true` also calls `GET {base}/models` |
+| `GET /api/setups/agents` | Whether the agents are on, which endpoint and models they use, and the MLflow server and experiment; `?check=true` also calls `GET {base}/models` |
 | `POST /api/setups` | Start a setup from `{ref, analysis, request, spec}` and run it to its first pause |
 | `GET /api/setups/{id}` | The setup: spec, builder notes, findings, issue cards, history |
 | `POST /api/setups/{id}/actions` | `{"action": "apply", "accept": [...], "dismiss": [...]}`, `{"action": "edit", "spec": {...}}`, `{"action": "redraft", "request": "..."}` or `{"action": "finish"}` |
@@ -312,6 +313,87 @@ LLM_MODEL=your-model
 LLM_API_KEY=...
 ```
 
+## MLflow
+
+The agents' system prompts live in the MLflow Prompt Registry, linked to the `ew-kit` experiment:
+
+| Prompt | Agent |
+|--------|-------|
+| `ew-kit-builder` | Run setup builder: request → RunSpec |
+| `ew-kit-reviewer` | Run setup reviewer: findings → issue cards |
+| `ew-kit-datasets` | New run builder: request → dataset queries |
+
+Every agent call loads the **latest version** of its prompt, so a new version saved in the
+MLflow UI applies to the next draft or review without a restart or redeploy. The version used
+(e.g. `ew-kit-builder/3`) is recorded with each draft and review. Two parts of each prompt stay
+in code and fill the template's variables: `{{ knowledge }}` is the knowledge card
+(`backend/app/agents/knowledge.md`) and `{{ run_policy }}` the run policy, which must match the
+validator. If MLflow cannot be reached the agent step fails with an error on the page, and the
+form and validator still work.
+
+Every graph run (creating a setup or request, and each action on it) is one trace in the
+experiment, named `run-setup` or `run-request`, with the setup or request ID as its session.
+A trace holds the graph's nodes, each model call with its messages and token counts, each
+repository tool call, and links to the prompt versions used. So the request texts, specs and
+repository excerpts sent to the model are stored on the MLflow server too.
+
+The MLflow credentials (HTTP basic auth) live in a Kubernetes Secret written to the gitignored
+`secrets/` directory, like the other tokens. The tracking URI and experiment go in the Helm
+values (`mlflow.trackingUri`, `mlflow.experiment`).
+
+### 1. Write the Secret manifest
+
+```bash
+mkdir -p secrets && chmod 700 secrets
+```
+
+```bash
+read -r "MLFLOW_TRACKING_USERNAME?MLflow user: " && read -rs "MLFLOW_TRACKING_PASSWORD?MLflow password: "
+```
+
+```bash
+printf 'MLFLOW_TRACKING_USERNAME=%s\nMLFLOW_TRACKING_PASSWORD=%s\n' "$MLFLOW_TRACKING_USERNAME" "$MLFLOW_TRACKING_PASSWORD" | kubectl create secret generic agentic-ops-mlflow --namespace agentic-ops --from-env-file=/dev/stdin --dry-run=client -o yaml > secrets/agentic-ops-mlflow.yaml && chmod 600 secrets/agentic-ops-mlflow.yaml
+```
+
+```bash
+unset MLFLOW_TRACKING_USERNAME MLFLOW_TRACKING_PASSWORD
+```
+
+### 2. Install it in the cluster
+
+```bash
+kubectl apply -f secrets/agentic-ops-mlflow.yaml
+```
+
+```bash
+kubectl -n agentic-ops rollout restart deployment/agentic-ops-backend
+```
+
+The backend reads `MLFLOW_TRACKING_USERNAME` and `MLFLOW_TRACKING_PASSWORD` from Secret
+`agentic-ops-mlflow` (set by `mlflow.existingSecret`, `mlflow.usernameKey` and
+`mlflow.passwordKey`). The references are optional, for servers without auth.
+
+### Seeding a new tracking server
+
+The first prompt versions are in `backend/app/agents/seed_prompts.py`. On a server that does not
+have them yet, register them (and create the experiment) with:
+
+```bash
+cd backend && uv run python -m app.agents.seed_prompts
+```
+
+It reads `MLFLOW_TRACKING_URI` like the backend, and leaves prompts that already exist alone, so
+editing that file does not change the prompts in use: edit them in MLflow.
+
+### Using MLflow outside the cluster
+
+Put the tracking URI in `backend/.env` (gitignored). The credentials can be embedded in it; the
+backend splits them out, so they never appear in logs or traces:
+
+```
+MLFLOW_TRACKING_URI=https://user:password@mlflow.example.org
+```
+
 ## Local development
 
 ```bash
@@ -340,6 +422,9 @@ settings come from environment variables or `backend/.env`:
 | `LLM_BUILDER_MODEL`, `LLM_REVIEWER_MODEL` | `LLM_MODEL` |
 | `LLM_STRUCTURED_OUTPUT` | `function_calling` (or `json_schema`, `json_mode`) |
 | `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOOL_CALLS` | `0`, `120`, `8` |
+| `MLFLOW_TRACKING_URI` | none: the agents cannot load their prompts; see [MLflow](#mlflow) |
+| `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | none, or embedded in `MLFLOW_TRACKING_URI` |
+| `MLFLOW_EXPERIMENT` | `ew-kit` |
 | `DATABASE_URL` | none: run setups are kept in memory |
 
 ## Container images

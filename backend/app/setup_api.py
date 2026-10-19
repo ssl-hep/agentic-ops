@@ -10,10 +10,12 @@ from pydantic import BaseModel, Field
 
 from app.agents.graph import SetupContext, SetupStatus
 from app.agents.llm import model_name
+from app.agents.prompts import PromptSource
 from app.api import Repository
 from app.runspec import IssueCard, RunSpec, ValidationReport
 from app.schemas import ResolvedRef
 from app.settings import Settings, StructuredOutputMethod, get_settings
+from app.tracking import graph_run, tracking_uri
 
 router = APIRouter(prefix="/api/setups", tags=["run setup"])
 
@@ -31,6 +33,10 @@ def get_agent_models(request: Request) -> AgentModels:
     return request.app.state.agent_models
 
 
+def get_prompts(request: Request) -> PromptSource:
+    return request.app.state.prompts
+
+
 def get_setup_graph(request: Request):
     return request.app.state.setup_graph
 
@@ -38,8 +44,13 @@ def get_setup_graph(request: Request):
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_context(repo: Repository, settings: SettingsDep, models: Annotated[AgentModels, Depends(get_agent_models)]):
-    return SetupContext(repo=repo, settings=settings, builder=models.builder, reviewer=models.reviewer)
+def get_context(
+    repo: Repository,
+    settings: SettingsDep,
+    models: Annotated[AgentModels, Depends(get_agent_models)],
+    prompts: Annotated[PromptSource, Depends(get_prompts)],
+):
+    return SetupContext(repo=repo, settings=settings, prompts=prompts, builder=models.builder, reviewer=models.reviewer)
 
 
 Context = Annotated[SetupContext, Depends(get_context)]
@@ -53,6 +64,9 @@ class AgentsStatus(BaseModel):
     reviewer_model: str | None
     structured_output: StructuredOutputMethod
     api_key_configured: bool
+    # Where the system prompts come from and the agent runs are traced
+    mlflow_tracking_uri: str | None
+    mlflow_experiment: str
     reachable: bool | None = None
     detail: str | None = None
 
@@ -154,6 +168,8 @@ async def agents_status(
         reviewer_model=model_name(settings, "reviewer"),
         structured_output=settings.llm_structured_output,
         api_key_configured=settings.llm_api_key is not None,
+        mlflow_tracking_uri=tracking_uri(settings),
+        mlflow_experiment=settings.mlflow_experiment,
     )
     if check and settings.llm_base_url:
         headers = {"Authorization": f"Bearer {settings.llm_api_key.get_secret_value().strip()}"} if settings.llm_api_key else {}
@@ -182,7 +198,8 @@ async def create_setup(body: CreateSetup, graph: Graph, context: Context) -> Set
         "models": {},
         "history": [],
     }
-    await graph.ainvoke(state, _config(setup_id), context=context)
+    with graph_run("run-setup", setup_id, {"action": "create", "request": state["request"]}):
+        await graph.ainvoke(state, _config(setup_id), context=context)
     return await _view(graph, setup_id, context.builder is not None)
 
 
@@ -206,5 +223,6 @@ async def act(setup_id: str, action: SetupAction, graph: Graph, context: Context
         known = {c.id for c in view.issues}
         if unknown := (set(action.accept) | set(action.dismiss)) - known:
             raise HTTPException(status_code=422, detail=f"Unknown issue cards: {', '.join(sorted(unknown))}")
-    await graph.ainvoke(Command(resume=action.model_dump()), _config(setup_id), context=context)
+    with graph_run("run-setup", setup_id, action.model_dump()):
+        await graph.ainvoke(Command(resume=action.model_dump()), _config(setup_id), context=context)
     return await _view(graph, setup_id, context.builder is not None)

@@ -13,7 +13,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from app.agents.llm import gather_with_tools, structured
-from app.agents.prompts import reviewer_system
 from app.agents.tools import analysis_digest, evidence, repository_tools
 from app.repository import EWKitRepository, NotFoundError
 from app.runspec import (
@@ -34,6 +33,7 @@ from app.validator import validate
 
 async def review_spec(
     model: BaseChatModel,
+    system: str,
     settings: Settings,
     repo: EWKitRepository,
     resolved: ResolvedRef,
@@ -57,7 +57,7 @@ async def review_spec(
             evidence(f"data/{spec.analysis}@{resolved.short_sha}", digest),
         ]
     )
-    messages = [SystemMessage(content=reviewer_system()), HumanMessage(content=body)]
+    messages = [SystemMessage(content=system), HumanMessage(content=body)]
     messages = await gather_with_tools(model, repository_tools(repo, resolved), messages, settings.llm_max_tool_calls)
     blocking = sorted({f.code for f in report.blocking})
     output = await structured(

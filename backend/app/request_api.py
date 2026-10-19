@@ -11,7 +11,9 @@ from app.agents.request_graph import RequestContext, RequestStatus
 from app.api import Repository
 from app.run_request import DatasetQuery, SelectedDataset, SpecReadyReceipt
 from app.schemas import ResolvedRef
-from app.setup_api import AgentModels, SettingsDep, get_agent_models
+from app.agents.prompts import PromptSource
+from app.setup_api import AgentModels, SettingsDep, get_agent_models, get_prompts
+from app.tracking import graph_run
 
 router = APIRouter(prefix="/api/requests", tags=["run request"])
 
@@ -20,8 +22,13 @@ def get_request_graph(request: Request):
     return request.app.state.request_graph
 
 
-def get_context(repo: Repository, settings: SettingsDep, models: Annotated[AgentModels, Depends(get_agent_models)]):
-    return RequestContext(repo=repo, settings=settings, builder=models.builder)
+def get_context(
+    repo: Repository,
+    settings: SettingsDep,
+    models: Annotated[AgentModels, Depends(get_agent_models)],
+    prompts: Annotated[PromptSource, Depends(get_prompts)],
+):
+    return RequestContext(repo=repo, settings=settings, prompts=prompts, builder=models.builder)
 
 
 Context = Annotated[RequestContext, Depends(get_context)]
@@ -112,7 +119,8 @@ async def create_request(body: CreateRequest, graph: Graph, context: Context) ->
         "errors": [],
         "history": [],
     }
-    await graph.ainvoke(state, _config(request_id), context=context)
+    with graph_run("run-request", request_id, {"action": "create", "request": state["request"]}):
+        await graph.ainvoke(state, _config(request_id), context=context)
     return await _view(graph, request_id, context.builder is not None)
 
 
@@ -130,5 +138,6 @@ async def act(request_id: str, action: RequestAction, graph: Graph, context: Con
         raise HTTPException(status_code=409, detail="The dataset list is empty; add datasets before marking it ready.")
     if isinstance(action, RedraftAction) and context.builder is None:
         raise HTTPException(status_code=409, detail="The builder agent is off: no model endpoint is configured.")
-    await graph.ainvoke(Command(resume=action.model_dump()), _config(request_id), context=context)
+    with graph_run("run-request", request_id, action.model_dump()):
+        await graph.ainvoke(Command(resume=action.model_dump()), _config(request_id), context=context)
     return await _view(graph, request_id, context.builder is not None)

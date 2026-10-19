@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.agents.checkpoint import open_checkpointer
 from app.agents.graph import build_setup_graph
 from app.agents.llm import chat_model
+from app.agents.prompts import MlflowPrompts
 from app.agents.request_graph import build_request_graph
 from app.api import router as ewkit_router
 from app.gitlab import GitLabError, ReadOnlyGitLabClient
@@ -17,6 +19,7 @@ from app.request_api import router as request_router
 from app.settings import get_settings
 from app.setup_api import AgentModels
 from app.setup_api import router as setup_router
+from app.tracking import start_tracing, tracking_uri
 
 # Show the app's own INFO logs (the Spec-is-ready hand-off among them), not every library's
 _app_logger = logging.getLogger("app")
@@ -38,6 +41,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_concurrency=settings.gitlab_max_concurrency,
     )
     app.state.repository = EWKitRepository(client)
+    # Blocking HTTP to the tracking server, once at startup
+    await asyncio.to_thread(start_tracing, settings)
+    app.state.prompts = MlflowPrompts(configured=tracking_uri(settings) is not None)
     app.state.agent_models = AgentModels(
         builder=chat_model(settings, "builder"), reviewer=chat_model(settings, "reviewer")
     )

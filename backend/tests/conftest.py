@@ -1,5 +1,6 @@
 """Shared fixtures: a fake GitLab served through httpx.MockTransport, and an app client using it."""
 
+import os
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -11,12 +12,20 @@ from fastapi.testclient import TestClient
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from mlflow.entities.model_registry import PromptVersion
 
+from app.agents.prompts import SystemPrompt, render
+from app.agents.seed_prompts import TEMPLATES
 from app.api import get_repository
 from app.gitlab import ReadOnlyGitLabClient
 from app.main import app
 from app.repository import EWKitRepository
 from app.settings import Settings
+from app.setup_api import get_prompts
+
+# The app starts with settings from the environment; keep tests off a real tracking server
+for _name in ("MLFLOW_TRACKING_URI", "MLFLOW_TRACKING_USERNAME", "MLFLOW_TRACKING_PASSWORD"):
+    os.environ.pop(_name, None)
 
 PROJECT = "atlas/EWKit"
 SHA = "17c998c" + "0" * 33
@@ -121,9 +130,17 @@ def repository() -> EWKitRepository:
 @pytest.fixture
 def client(repository: EWKitRepository) -> Iterator[TestClient]:
     app.dependency_overrides[get_repository] = lambda: repository
+    app.dependency_overrides[get_prompts] = SeedPrompts
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+class SeedPrompts:
+    """The seed templates as version 1, in place of the MLflow Prompt Registry."""
+
+    async def load(self, name: str) -> SystemPrompt:
+        return render(PromptVersion(name, 1, TEMPLATES[name][0]))
 
 
 class ScriptedModel(BaseChatModel):

@@ -87,7 +87,7 @@ def test_builder_queries_expand_to_datasets(client: TestClient, spec_ready: Fake
         (DATA15, "RadiativeDecays/Run2_data", 1),
     ]
     assert view["draft"]["questions"] == ["Do you want mc23e too?"]
-    assert view["draft"]["prompt_version"] == "datasets-1"
+    assert view["draft"]["prompt_version"] == "ew-kit-datasets/1"
     assert view["errors"] == []
 
     edited = act(client, view, action="edit", datasets=[BKG_R15540, DATA15, "user.x.extra.v1"])
@@ -142,4 +142,4 @@ def test_without_builder_the_person_lists_datasets(client: TestClient, spec_read
 
 def test_spec_ready_is_not_in_the_model_context() -> None:
     """Model-calling nodes see only the run context; the procedural service must not be in it."""
-    assert {f.name for f in fields(RequestContext)} == {"repo", "settings", "builder"}
+    assert {f.name for f in fields(RequestContext)} == {"repo", "settings", "prompts", "builder"}
