@@ -23,9 +23,6 @@ from agent_harness.config import DEFAULT_EXPERIMENT, ConfigError, configure_mlfl
 from agent_harness.mcp_tools import load_tools
 from agent_harness.scorers import default_scorers, judge_scorers
 
-DEFAULT_PROMPT = f"prompts:/{seeding.PROMPT_NAME}@{seeding.PROMPT_ALIAS}"
-
-
 def _agent_config(args) -> tuple:
     """Load the prompt and MCP tools named by the command-line options, and a factory for the agent."""
     prompt = mlflow.genai.load_prompt(args.prompt, link_to_model=False)
@@ -33,7 +30,7 @@ def _agent_config(args) -> tuple:
     tools = asyncio.run(load_tools(connections, args.tools, args.allow_writes))
     system_prompt = prompt.format(user=args.af_user)
     params = {
-        "agent": seeding.PROMPT_NAME,
+        "agent": args.agent,
         "llm_model": args.model,
         "prompt_name": prompt.name,
         "prompt_version": str(prompt.version),
@@ -44,7 +41,7 @@ def _agent_config(args) -> tuple:
         "allow_writes": str(args.allow_writes),
         "max_steps": str(args.max_steps),
     }
-    return prompt, tools, lambda client: build_agent(args.model, system_prompt, tools, client), params
+    return prompt, tools, lambda client: build_agent(args.agent, args.model, system_prompt, tools, client), params
 
 
 def _activate_model(prompt, params: dict) -> str:
@@ -76,7 +73,8 @@ def cmd_ask(args) -> None:
     prompt, tools, make_agent, params = _agent_config(args)
     _activate_model(prompt, params)
     print(f"tools: {params['tools']}", file=sys.stderr)
-    answer = asyncio.run(make_predict_fn(make_agent, args.max_steps)(args.question))
+    sample_list = args.sample_list.read_text() if args.sample_list else None
+    answer = asyncio.run(make_predict_fn(make_agent, args.max_steps)(args.question, sample_list))
     print(answer)
     print(f"\ntrace: {mlflow.get_last_active_trace_id()}", file=sys.stderr)
 
@@ -119,16 +117,21 @@ def cmd_eval(args) -> None:
 
 
 def _agent_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="MLflow prompt URI (default: %(default)s)")
+    parser.add_argument(
+        "--agent",
+        choices=sorted(seeding.AGENTS),
+        default="fs-explorer",
+        help="agent under test; sets the default prompt, dataset and tools (default: %(default)s)",
+    )
+    parser.add_argument("--prompt", help="MLflow prompt URI (default: prompts:/<agent>@champion)")
     parser.add_argument(
         "--model", default=os.environ.get("LLM_MODEL"), help="LLM model name (default: LLM_MODEL from .env)"
     )
     parser.add_argument(
         "--tools",
         nargs="+",
-        default=["fs_*", "rucio_list*", "rucio_get*"],
         metavar="GLOB",
-        help="MCP tool name globs the agent may use (default: fs_*)",
+        help="MCP tool name globs the agent may use (default: the agent's, e.g. rucio_list* rucio_get* for run-request)",
     )
     parser.add_argument("--allow-writes", action="store_true", help="also allow tools not marked read-only")
     parser.add_argument("--server", nargs="+", metavar="NAME", help="MCP servers from mcp.json (default: all)")
@@ -157,13 +160,12 @@ def main(argv: list[str] | None = None) -> None:
 
     ask = sub.add_parser("ask", help="ask the agent one question (traced)")
     ask.add_argument("question")
+    ask.add_argument("--sample-list", type=Path, metavar="FILE", help="sample-list file to give the agent as evidence")
     _agent_options(ask)
     ask.set_defaults(func=cmd_ask)
 
     evaluate = sub.add_parser("eval", help="evaluate the agent on an MLflow dataset")
-    evaluate.add_argument(
-        "--dataset", default=seeding.DATASET_NAME, help="MLflow evaluation dataset name or ID (default: %(default)s)"
-    )
+    evaluate.add_argument("--dataset", help="MLflow evaluation dataset name or ID (default: the agent's)")
     evaluate.add_argument("--judge", action="store_true", help="add MLflow's LLM-judged Correctness scorer")
     evaluate.add_argument("--judge-model", help="model for --judge (default: --model)")
     evaluate.add_argument("--workers", type=int, default=2, help="questions evaluated in parallel")
@@ -171,6 +173,11 @@ def main(argv: list[str] | None = None) -> None:
     evaluate.set_defaults(func=cmd_eval)
 
     args = parser.parse_args(argv)
+    if agent := seeding.AGENTS.get(getattr(args, "agent", "")):
+        args.prompt = args.prompt or f"prompts:/{agent.name}@{seeding.PROMPT_ALIAS}"
+        args.tools = args.tools or list(agent.tools)
+        if hasattr(args, "dataset"):
+            args.dataset = args.dataset or agent.dataset
     try:
         if getattr(args, "model", "set") is None:
             raise ConfigError("No model: set LLM_MODEL in .env or pass --model")

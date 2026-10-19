@@ -28,8 +28,25 @@ def chat_model(model: str, http_client: httpx.AsyncClient | None = None, tempera
     )
 
 
-def build_agent(model: str, system_prompt: str, tools: Sequence[BaseTool], http_client: httpx.AsyncClient | None = None):
-    return create_agent(chat_model(model, http_client), list(tools), system_prompt=system_prompt, name="fs-explorer")
+def build_agent(
+    name: str,
+    model: str,
+    system_prompt: str,
+    tools: Sequence[BaseTool],
+    http_client: httpx.AsyncClient | None = None,
+):
+    return create_agent(chat_model(model, http_client), list(tools), system_prompt=system_prompt, name=name)
+
+
+def evidence(source: str, body: str) -> str:
+    """Wrap supplied content so the model treats it as data, as the backend does (app/agents/tools.py)."""
+    body = body.replace("</evidence>", "<\\/evidence>")
+    return f'<evidence source="{source}">\n{body}\n</evidence>'
+
+
+def user_message(question: str, sample_list: str | None = None) -> str:
+    """The question, followed by the sample-list excerpt it is about, if any."""
+    return f"{question}\n\n{evidence('sample_list', sample_list)}" if sample_list else question
 
 
 def final_text(result: dict) -> str:
@@ -50,11 +67,11 @@ def make_predict_fn(
     So each question gets its own HTTP client, and an agent built on it, inside the loop running it.
     """
 
-    async def predict_fn(question: str) -> str:
+    async def predict_fn(question: str, sample_list: str | None = None) -> str:
         async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS) as client:
             # Each tool call is two graph steps (model, then tool), plus the final answer
             result = await make_agent(client).ainvoke(
-                {"messages": [{"role": "user", "content": question}]},
+                {"messages": [{"role": "user", "content": user_message(question, sample_list)}]},
                 config={"recursion_limit": 2 * max_steps + 1},
             )
         return final_text(result)

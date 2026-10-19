@@ -45,11 +45,35 @@ Backend API (all take an optional `?ref=` branch, tag or SHA; the default branch
 
 Interactive docs are at `http://localhost:8000/docs` when the backend runs locally.
 
+## New run: the run's datasets
+
+For now **New run** settles one thing: which datasets the run reads. Describe the data in plain
+words, such as "Run 3 Z+jets background and data for RadiativeDecays at EFP_v6.6". Each request is
+one LangGraph thread (`backend/app/agents/request_graph.py`):
+
+1. **Dataset builder agent** (optional, `backend/app/agents/dataset_builder.py`) picks sample lists
+   and EWKit-style `-w`/`--skip` regexes, using the same read-only repository tools. It never
+   writes dataset names; code (`backend/app/run_request.py`) expands its queries at the pinned
+   commit into the list, with the file and line each dataset came from.
+2. **The person** edits the list (or lists datasets by hand when the agents are off), or changes
+   the request and redrafts.
+3. **Spec is ready** hands the final list to `SpecReadyService` (`backend/app/ops.py`), a
+   procedural service with no model or tool access. It is closed over by the graph's
+   deterministic submit node only, never put in the context the agent nodes see. For now it
+   logs the datasets on the `app.ops.spec_ready` logger, in the backend's output.
+
+| Endpoint | Does |
+|----------|------|
+| `POST /api/requests` | Start a request from `{ref, analysis, request}` and run it to its first pause |
+| `GET /api/requests/{id}` | The request: datasets, builder queries and notes, receipt, history |
+| `POST /api/requests/{id}/actions` | `{"action": "edit", "datasets": [...]}`, `{"action": "redraft", "request": "..."}` or `{"action": "finish"}` |
+
+The harness's `run-request` agent (`harness/README.md`) is the place to try the same job with
+Rucio checks, such as which datasets are already at MWT2.
+
 ## Run setup
 
-The second screen (stages 2–3 of the run lifecycle in the design proposal). Start it with
-**Set up a run** on a runnable analysis, or from **New run** with a request in plain words such as
-"Run 3 background and data for RadiativeDecays at EFP_v6.6, with systematics". Nothing is
+The full run options. Start it with **Set up a run** on a runnable analysis. Nothing is
 submitted from here: the result is a checked `RunSpec`, the options a production passes to
 `EWRun.py`, mirroring `EWGridRun.py` (analysis, `--configName`, runs, sample lists,
 `--doSys`/`--noSys`, `--noFilter`, `--noThinning`, `-w`/`--skip` patterns, purpose, memory).

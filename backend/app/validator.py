@@ -217,23 +217,33 @@ def _systematics_findings(config: ConfigInfo, spec: RunSpec) -> list[Finding]:
     return []
 
 
-def _compile_patterns(spec: RunSpec) -> tuple[dict[str, list[re.Pattern[str]]], list[Finding]]:
+def compile_patterns(
+    include: list[str], skip: list[str]
+) -> tuple[dict[str, list[re.Pattern[str]]], list[tuple[str, str, str]]]:
+    """EWKit's -w (include) and --skip regexes, compiled; invalid ones come back as (field, pattern, error)."""
     compiled: dict[str, list[re.Pattern[str]]] = {"include": [], "skip": []}
-    findings = []
-    for field in ("include", "skip"):
-        for pattern in getattr(spec, field):
+    errors = []
+    for field, patterns in (("include", include), ("skip", skip)):
+        for pattern in patterns:
             try:
                 compiled[field].append(re.compile(pattern))
             except re.error as exc:
-                findings.append(
-                    Finding(
-                        id=f"INVALID_PATTERN:{field}:{pattern}",
-                        code="INVALID_PATTERN",
-                        severity="blocking",
-                        field=field,
-                        message=f"{field} pattern {pattern!r} is not a valid regular expression: {exc}",
-                    )
-                )
+                errors.append((field, pattern, str(exc)))
+    return compiled, errors
+
+
+def _compile_patterns(spec: RunSpec) -> tuple[dict[str, list[re.Pattern[str]]], list[Finding]]:
+    compiled, errors = compile_patterns(spec.include, spec.skip)
+    findings = [
+        Finding(
+            id=f"INVALID_PATTERN:{field}:{pattern}",
+            code="INVALID_PATTERN",
+            severity="blocking",
+            field=field,
+            message=f"{field} pattern {pattern!r} is not a valid regular expression: {error}",
+        )
+        for field, pattern, error in errors
+    ]
     return compiled, findings
 
 

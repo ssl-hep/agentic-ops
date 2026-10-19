@@ -251,6 +251,52 @@ export type SetupAction =
   | { action: "redraft"; request: string }
   | { action: "finish" };
 
+export interface DatasetQuery {
+  folder: string;
+  sample_list: string;
+  include: string[];
+  skip: string[];
+  reason: string;
+}
+
+export interface SelectedDataset {
+  name: string;
+  campaign: string | null;
+  source: string | null;
+  line: number | null;
+  reason: string;
+}
+
+export interface DatasetDraftInfo {
+  queries: DatasetQuery[];
+  extra_datasets: string[];
+  assumptions: string[];
+  questions: string[];
+  request: string | null;
+  model: string | null;
+  prompt_version: string | null;
+}
+
+export interface RunRequestView {
+  id: string;
+  status: "needs_input" | "ready";
+  waiting: boolean;
+  request: string | null;
+  analysis_hint: string | null;
+  resolved: ResolvedRef | null;
+  datasets: SelectedDataset[];
+  draft: DatasetDraftInfo | null;
+  receipt: { request_id: string; datasets: number; accepted_at: string } | null;
+  errors: string[];
+  history: { event: string; at: string; [key: string]: unknown }[];
+  agents_enabled: boolean;
+}
+
+export type RequestAction =
+  | { action: "edit"; datasets: string[] }
+  | { action: "redraft"; request: string }
+  | { action: "finish" };
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -318,4 +364,9 @@ export const api = {
   createSetup: (body: { ref?: string; analysis?: string; request?: string; spec?: RunSpec }) =>
     post<SetupView>("/api/setups", body),
   setupAction: (id: string, action: SetupAction) => post<SetupView>(`/api/setups/${seg(id)}/actions`, action),
+  request: (id: string) => get<RunRequestView>(`/api/requests/${seg(id)}`),
+  createRequest: (body: { ref?: string; analysis?: string; request?: string }) =>
+    post<RunRequestView>("/api/requests", body),
+  requestAction: (id: string, action: RequestAction) =>
+    post<RunRequestView>(`/api/requests/${seg(id)}/actions`, action),
 };

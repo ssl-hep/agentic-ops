@@ -10,7 +10,9 @@ import json
 from langchain_core.tools import BaseTool, StructuredTool
 
 from app.repository import EWKitRepository, NotFoundError
+from app.run_request import sample_list_rows
 from app.schemas import AnalysisSummary, ResolvedRef
+from app.validator import compile_patterns, is_selected
 
 MAX_DATASETS = 50
 MAX_CONFIG_CHARS = 20000
@@ -83,27 +85,36 @@ def repository_tools(repo: EWKitRepository, resolved: ResolvedRef) -> list[BaseT
         return evidence(f"{a.path}@{short}", json.dumps(analysis_digest(a), indent=1))
 
     async def find_datasets(
-        folder: str, sample_list: str, campaign: str = "", contains: str = "", limit: int = 20
+        folder: str,
+        sample_list: str,
+        campaign: str = "",
+        contains: str = "",
+        include: list[str] | None = None,
+        skip: list[str] | None = None,
+        limit: int = 20,
     ) -> str:
-        """Datasets in one sample list such as Run3_bkg, filtered by campaign (e.g. mc23e, unknown) and by a
-        substring of the name. Returns line numbers, headings and at most 50 rows."""
+        """Datasets in one sample list such as Run3_bkg, filtered by campaign (e.g. mc23e, unknown), by a
+        substring of the name, and by EWKit-style include/skip regexes. Returns line numbers, headings and
+        at most 50 rows."""
+        patterns, bad = compile_patterns(include or [], skip or [])
+        if bad:
+            return "; ".join(f"{field} pattern {pattern!r} is invalid: {error}" for field, pattern, error in bad)
         try:
-            detail = await repo.sample_list(resolved, folder, sample_list)
+            detail, all_rows = await sample_list_rows(repo, resolved, folder, sample_list)
         except NotFoundError as exc:
             return str(exc)
-        text = await repo.read_file(sha, detail.summary.path)
-        line_of = {line.strip(): i for i, line in enumerate(text.splitlines(), start=1)}
         rows, total = [], 0
-        for g in detail.groups:
-            for d in g.datasets:
-                if campaign and d.campaign != campaign:
-                    continue
-                if contains and contains.lower() not in d.name.lower():
-                    continue
-                total += 1
-                if len(rows) < min(limit, MAX_DATASETS):
-                    problem = f"  [{d.problem}]" if d.problem else ""
-                    rows.append(f"L{line_of.get(d.name, '?')} [{g.heading or '-'}] {d.campaign} {d.name}{problem}")
+        for heading, d, line in all_rows:
+            if campaign and d.campaign != campaign:
+                continue
+            if contains and contains.lower() not in d.name.lower():
+                continue
+            if not is_selected(d.name, patterns):
+                continue
+            total += 1
+            if len(rows) < min(limit, MAX_DATASETS):
+                problem = f"  [{d.problem}]" if d.problem else ""
+                rows.append(f"L{line or '?'} [{heading or '-'}] {d.campaign} {d.name}{problem}")
         header = f"{total} of {detail.summary.datasets} datasets match; showing {len(rows)}"
         return evidence(f"{detail.summary.path}@{short}", header + "\n" + "\n".join(rows))
 

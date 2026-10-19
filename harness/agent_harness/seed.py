@@ -1,17 +1,19 @@
-"""Bootstrap the first prompt version and question dataset in MLflow.
+"""Bootstrap each agent's first prompt version and question dataset in MLflow.
 
 Safe to re-run: anything that already exists is left alone. After seeding, change prompts and
 questions in the MLflow UI (or with the MLflow API) so every change is versioned there.
 """
 
+from dataclasses import dataclass
+
 import mlflow
 from mlflow.genai import datasets
 
-PROMPT_NAME = "fs-explorer"
-PROMPT_ALIAS = "champion"
-DATASET_NAME = "fs-explorer-questions"
+from agent_harness import run_request
 
-PROMPT_TEMPLATE = """\
+PROMPT_ALIAS = "champion"
+
+FS_EXPLORER_PROMPT = """\
 You are a research assistant for an ATLAS physicist on the UChicago Analysis Facility (AF).
 The user's AF username is {{ user }}.
 
@@ -27,7 +29,7 @@ Answer concisely. Quote file and directory names exactly as the tools return the
 absolute path of anything you mention.
 """
 
-QUESTIONS = [
+FS_EXPLORER_QUESTIONS = [
     {
         "inputs": {"question": "What datasets are in /home/bengal1/data/atlas?"},
         "expectations": {
@@ -48,18 +50,50 @@ QUESTIONS = [
 ]
 
 
-def seed_prompt() -> str:
-    existing = mlflow.genai.load_prompt(f"prompts:/{PROMPT_NAME}@latest", allow_missing=True)
-    if existing is not None:
-        return f"prompt {PROMPT_NAME} exists (latest is v{existing.version}); left alone"
-    version = mlflow.genai.register_prompt(
-        name=PROMPT_NAME,
-        template=PROMPT_TEMPLATE,
-        commit_message="Initial filesystem explorer prompt",
-        tags={"agent": "fs-explorer"},
+@dataclass(frozen=True)
+class AgentSeed:
+    """One agent under test: its prompt, its question dataset and the MCP tools it gets by default."""
+
+    name: str
+    template: str
+    commit_message: str
+    dataset: str
+    questions: list[dict]
+    tools: tuple[str, ...]
+
+
+AGENTS = {
+    agent.name: agent
+    for agent in (
+        AgentSeed(
+            name="fs-explorer",
+            template=FS_EXPLORER_PROMPT,
+            commit_message="Initial filesystem explorer prompt",
+            dataset="fs-explorer-questions",
+            questions=FS_EXPLORER_QUESTIONS,
+            tools=("fs_*", "rucio_list*", "rucio_get*"),
+        ),
+        AgentSeed(
+            name="run-request",
+            template=run_request.PROMPT_TEMPLATE,
+            commit_message="Initial run-request prompt: choose a run's datasets, check them in Rucio",
+            dataset="run-request",
+            questions=run_request.QUESTIONS,
+            tools=("rucio_list*", "rucio_get*"),
+        ),
     )
-    mlflow.genai.set_prompt_alias(PROMPT_NAME, alias=PROMPT_ALIAS, version=version.version)
-    return f"registered prompt {PROMPT_NAME} v{version.version} as @{PROMPT_ALIAS}"
+}
+
+
+def seed_prompt(agent: AgentSeed) -> str:
+    existing = mlflow.genai.load_prompt(f"prompts:/{agent.name}@latest", allow_missing=True)
+    if existing is not None:
+        return f"prompt {agent.name} exists (latest is v{existing.version}); left alone"
+    version = mlflow.genai.register_prompt(
+        name=agent.name, template=agent.template, commit_message=agent.commit_message, tags={"agent": agent.name}
+    )
+    mlflow.genai.set_prompt_alias(agent.name, alias=PROMPT_ALIAS, version=version.version)
+    return f"registered prompt {agent.name} v{version.version} as @{PROMPT_ALIAS}"
 
 
 def find_dataset(name: str, experiment_id: str):
@@ -72,14 +106,14 @@ def find_dataset(name: str, experiment_id: str):
     return found[0] if found else None
 
 
-def seed_dataset(experiment_id: str) -> str:
-    found = find_dataset(DATASET_NAME, experiment_id)
+def seed_dataset(agent: AgentSeed, experiment_id: str) -> str:
+    found = find_dataset(agent.dataset, experiment_id)
     if found is not None:
-        return f"dataset {DATASET_NAME} exists ({found.dataset_id}); left alone"
-    dataset = datasets.create_dataset(name=DATASET_NAME, experiment_id=[experiment_id], tags={"agent": "fs-explorer"})
-    dataset.merge_records(QUESTIONS)
-    return f"created dataset {DATASET_NAME} ({dataset.dataset_id}) with {len(QUESTIONS)} questions"
+        return f"dataset {agent.dataset} exists ({found.dataset_id}); left alone"
+    dataset = datasets.create_dataset(name=agent.dataset, experiment_id=[experiment_id], tags={"agent": agent.name})
+    dataset.merge_records(agent.questions)
+    return f"created dataset {agent.dataset} ({dataset.dataset_id}) with {len(agent.questions)} questions"
 
 
 def seed(experiment_id: str) -> list[str]:
-    return [seed_prompt(), seed_dataset(experiment_id)]
+    return [line for agent in AGENTS.values() for line in (seed_prompt(agent), seed_dataset(agent, experiment_id))]

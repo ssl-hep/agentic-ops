@@ -1,43 +1,15 @@
 """Run setup API: the LangGraph graph against the fake GitLab, with scripted chat models."""
 
 from collections.abc import Iterator
-from typing import Any
 
 import pytest
+from conftest import ScriptedModel, settings, tool_call
 from fastapi.testclient import TestClient
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, ToolMessage
 
 from app.main import app
-from app.settings import Settings, get_settings
+from app.settings import get_settings
 from app.setup_api import AgentModels, get_agent_models
-
-
-class ScriptedModel(BaseChatModel):
-    """Returns the scripted replies in order and records what it was sent."""
-
-    replies: list[AIMessage]
-    calls: list[list[BaseMessage]] = []
-
-    @property
-    def _llm_type(self) -> str:
-        return "scripted"
-
-    def bind_tools(self, tools: Any, **kwargs: Any) -> "ScriptedModel":
-        return self
-
-    def _generate(self, messages: list[BaseMessage], stop: Any = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
-        self.calls.append(list(messages))
-        return ChatResult(generations=[ChatGeneration(message=self.replies.pop(0))])
-
-
-def tool_call(name: str, args: dict, id: str = "call-1") -> AIMessage:
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": id}])
-
-
-def settings(**fields: Any) -> Settings:
-    return Settings(_env_file=None, **{"llm_base_url": None, "llm_model": None, **fields})
 
 
 @pytest.fixture

@@ -14,8 +14,7 @@ run context, never through state.
 
 import operator
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.graph import END, START, StateGraph
@@ -23,6 +22,8 @@ from langgraph.runtime import Runtime
 from langgraph.types import Checkpointer, Command, interrupt
 
 from app.agents.builder import draft_spec
+from app.agents.events import event as _event
+from app.agents.events import failed as _failed
 from app.agents.llm import AgentError, model_name
 from app.agents.prompts import BUILDER_PROMPT_VERSION, REVIEWER_PROMPT_VERSION
 from app.agents.reviewer import review_spec
@@ -57,15 +58,6 @@ class SetupState(TypedDict):
     models: NotRequired[dict]
     status: NotRequired[SetupStatus]
     history: Annotated[list[dict], operator.add]
-
-
-def _event(kind: str, **details: Any) -> dict:
-    return {"event": kind, "at": datetime.now(UTC).isoformat(timespec="seconds"), **details}
-
-
-def _failed(state: SetupState, step: str, exc: Exception) -> dict:
-    message = exc.message if isinstance(exc, GitLabError) else str(exc)
-    return {"errors": [*state.get("errors", []), f"{step}: {message}"], "history": [_event("error", step=step)]}
 
 
 async def start(state: SetupState, runtime: Runtime[SetupContext]) -> dict:
