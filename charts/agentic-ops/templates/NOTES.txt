@@ -23,6 +23,15 @@ Dataset agent:
 {{- end }}
   Selections are written to {{ .Values.scratch.mountPath }}{{ if .Values.scratch.enabled }} (PVC {{ include "agentic-ops.scratchPvcName" . }}){{ else }} (emptyDir; lost on restart){{ end }}.
 
+Kerberos:
+{{- if .Values.kerberos.enabled }}
+  ticket for {{ .Values.kerberos.principal }}, kept by the "kerberos" sidecar of the backend pod.
+  Secret "{{ .Values.kerberos.existingSecret }}": {{ if (lookup "v1" "Secret" .Release.Namespace .Values.kerberos.existingSecret) }}found{{ else }}NOT FOUND{{ end }}
+  kubectl -n {{ .Release.Namespace }} logs deployment/{{ include "agentic-ops.fullname" . }}-backend -c kerberos
+{{- else }}
+  OFF (see "Kerberos" in the README).
+{{- end }}
+
 Backend health check:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentic-ops.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
   curl http://localhost:{{ .Values.backend.service.port }}/healthz

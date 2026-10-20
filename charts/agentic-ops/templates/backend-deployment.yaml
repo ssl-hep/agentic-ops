@@ -22,11 +22,20 @@ spec:
         {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 8 }}
       annotations:
         checksum/db-secret: {{ include (print $.Template.BasePath "/db-secret.yaml") . | sha256sum }}
+        {{- if .Values.kerberos.enabled }}
+        checksum/kerberos-config: {{ include (print $.Template.BasePath "/kerberos-configmap.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      ## The backend never talks to the Kubernetes API. Without a token, the dataset agent can't
+      ## reach it either, e.g. to read the Kerberos Secret.
+      automountServiceAccountToken: false
+      ## Each container sees only its own processes, so the backend can't read the kerberos
+      ## sidecar's memory or files through /proc
+      shareProcessNamespace: false
       securityContext:
         ## The backend image runs as uid 10001; let it write the scratch volume
         fsGroup: 10001
@@ -115,6 +124,10 @@ spec:
             {{- end }}
             - name: SCRATCH_DIR
               value: {{ .Values.scratch.mountPath | quote }}
+            ## The ticket lives only in the kerberos sidecar. Point GSSAPI libraries at a cache
+            ## that can't exist, so any Kerberos use in the backend fails instead of finding one.
+            - name: KRB5CCNAME
+              value: FILE:/nonexistent/krb5cc
           volumeMounts:
             - name: scratch
               mountPath: {{ .Values.scratch.mountPath }}
@@ -130,6 +143,41 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- with .Values.kerberos }}
+        {{- if .enabled }}
+        ## Keeps a ticket in /krb/ccache. Only this container mounts the kerberos-* volumes, and
+        ## it serves nothing, so nothing in the backend can reach the password or the ticket.
+        - name: kerberos
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy }}
+          securityContext:
+            runAsUser: 10002
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: KRB_PRINCIPAL
+              value: {{ required "kerberos.principal is required when kerberos.enabled is true" .principal | quote }}
+            - name: KRB_REFRESH_SECONDS
+              value: {{ mul .refreshHours 3600 | quote }}
+          volumeMounts:
+            - name: kerberos-password
+              mountPath: /etc/kerberos
+              readOnly: true
+            - name: kerberos-config
+              mountPath: /etc/krb5.conf
+              subPath: krb5.conf
+              readOnly: true
+            - name: kerberos-ccache
+              mountPath: /krb
+          {{- with .resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+        {{- end }}
       volumes:
         - name: scratch
           {{- if .Values.scratch.enabled }}
@@ -138,3 +186,22 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.kerberos.enabled }}
+        ## Optional, like the other Secrets: without it the sidecar logs the failure and retries
+        - name: kerberos-password
+          secret:
+            secretName: {{ .Values.kerberos.existingSecret }}
+            optional: true
+            ## Group-readable by the pod's fsGroup, which the sidecar's uid 10002 belongs to
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.kerberos.passwordKey }}
+                path: password
+        - name: kerberos-config
+          configMap:
+            name: {{ include "agentic-ops.fullname" . }}-kerberos
+        - name: kerberos-ccache
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        {{- end }}

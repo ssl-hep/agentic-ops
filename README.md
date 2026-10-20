@@ -4,6 +4,7 @@
 |------|------|
 | `frontend/` | Next.js (App Router, TypeScript) web app, port 3000 |
 | `backend/` | FastAPI server (managed with uv), port 8000 |
+| `kerberos/` | Sidecar image that keeps a Kerberos ticket where the backend can't reach it ([Kerberos](#kerberos)) |
 | `charts/agentic-ops/` | Helm chart: frontend + backend + PostgreSQL ([groundhog2k/postgres](https://github.com/groundhog2k/helm-charts/tree/master/charts/postgres), official `postgres` image) |
 | `docs/` | Project docs, including the [design proposal](docs/agentic-ops-proposal.html) |
 
@@ -240,6 +241,82 @@ the scratch PVC is `ReadWriteOnce`; expect a short outage on each rollout. With
 `scratch.enabled: false` it mounts an `emptyDir` instead, and selections are lost when the
 pod restarts. Set `scratch.size` and `scratch.storageClass` to size the volume.
 
+## Kerberos
+
+A `kerberos` sidecar container in the backend pod keeps a ticket for one principal. It runs
+`kinit` with a password from a Secret when it starts and every `kerberos.refreshHours` (6 by
+default), and retries every 5 minutes after a failure. It is off unless `kerberos.enabled` is true.
+Nothing uses the ticket yet.
+
+### Why a sidecar
+
+The dataset agent runs inside the backend's own process. Anything the backend container can read,
+code running for the agent can read too. GSSAPI libraries (Rucio, XRootD, requests-kerberos) also
+pick up a ticket cache on their own. So the ticket is kept out of the backend container
+altogether:
+
+| What | How |
+|------|-----|
+| The password, `krb5.conf` and the ticket cache | Mounted only in the `kerberos` container. The pod doesn't share a process namespace, so the backend can't reach them through `/proc` either |
+| The Secret through the Kubernetes API | No service account token in the pod (`automountServiceAccountToken: false`) |
+| Kerberos in the backend container | `KRB5CCNAME=FILE:/nonexistent/krb5cc`, so a GSSAPI library there fails instead of finding a ticket |
+| What the agent can call | Pinned in `backend/tests/test_agent_boundary.py`: the exact tool list, and no `subprocess`, GSSAPI or `app.kerberos` import anywhere agent code reaches |
+
+`backend/tests/test_chart_kerberos.py` checks the rendered chart for the first three rows.
+
+### Adding the first feature that needs the ticket
+
+- Run the work in the `kerberos` container. Add the tools it needs (`xrdcp`, `eos`, …) to
+  `kerberos/Dockerfile`.
+- Serve it on a Unix socket in a new `emptyDir` shared with the backend. Never share `/krb`.
+- Call it from the backend only through an `app.kerberos` client, used by HTTP route modules.
+  Agent code must never import it; the boundary test fails if it does, even indirectly.
+- Never give the agent a tool that calls those routes or the socket.
+
+### 1. Write the Secret manifest
+
+```bash
+read -rs KERBEROS_PASSWORD
+```
+
+```bash
+printf %s "$KERBEROS_PASSWORD" | kubectl create secret generic agentic-ops-kerberos --namespace agentic-ops --from-file=KERBEROS_PASSWORD=/dev/stdin --dry-run=client -o yaml > secrets/agentic-ops-kerberos.yaml && chmod 600 secrets/agentic-ops-kerberos.yaml && unset KERBEROS_PASSWORD
+```
+
+### 2. Install it and turn the sidecar on
+
+```bash
+kubectl apply -f secrets/agentic-ops-kerberos.yaml
+```
+
+```bash
+docker build -t agentic-ops-kerberos:latest kerberos
+```
+
+```bash
+helm upgrade --install agentic-ops charts/agentic-ops -n agentic-ops --reuse-values --set kerberos.enabled=true --set kerberos.principal=USER@CERN.CH
+```
+
+`kerberos.krb5Conf` defaults to a CERN.CH configuration. The Secret reference is optional: without
+the Secret, the sidecar logs `kinit failed` and keeps retrying, and the rest of the app is not
+affected. After replacing the password, restart the backend.
+
+### 3. Check it
+
+```bash
+kubectl -n agentic-ops logs deployment/agentic-ops-backend -c kerberos
+```
+
+```bash
+kubectl -n agentic-ops exec deployment/agentic-ops-backend -c kerberos -- klist
+```
+
+The backend container should see none of it:
+
+```bash
+kubectl -n agentic-ops exec deployment/agentic-ops-backend -c backend -- sh -c 'ls /krb /etc/kerberos /var/run/secrets/kubernetes.io; echo "$KRB5CCNAME"'
+```
+
 ## Local development
 
 ```bash
@@ -277,6 +354,7 @@ settings come from environment variables or `backend/.env`:
 ```bash
 docker build -t agentic-ops-backend:latest backend
 docker build -t agentic-ops-frontend:latest frontend
+docker build -t agentic-ops-kerberos:latest kerberos   # only with kerberos.enabled
 ```
 
 ## Helm

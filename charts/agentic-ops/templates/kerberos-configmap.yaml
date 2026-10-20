@@ -1,0 +1,11 @@
+{{- if .Values.kerberos.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agentic-ops.fullname" . }}-kerberos
+  labels:
+    {{- include "agentic-ops.labels" . | nindent 4 }}
+data:
+  krb5.conf: |
+    {{- .Values.kerberos.krb5Conf | nindent 4 }}
+{{- end }}

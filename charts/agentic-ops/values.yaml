@@ -54,6 +54,38 @@ mcp:
   existingSecret: agentic-ops-mcp
   tokenKey: MCP_BEARER_TOKEN
 
+## Kerberos ticket, kept by a `kerberos` sidecar container in the backend pod. The password,
+## krb5.conf and ticket cache are mounted only in the sidecar, so the backend, and the dataset
+## agent inside it, can never read them. Off by default. The password is not part of the chart:
+## create the Secret yourself (see "Kerberos" in the README).
+kerberos:
+  enabled: false
+  ## e.g. someone@CERN.CH
+  principal: ""
+  existingSecret: agentic-ops-kerberos
+  passwordKey: KERBEROS_PASSWORD
+  ## Get a new ticket this often; keep it well under the realm's ticket lifetime (25h at CERN)
+  refreshHours: 6
+  image:
+    repository: agentic-ops-kerberos
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources: {}
+  krb5Conf: |
+    [libdefaults]
+      default_realm = CERN.CH
+      dns_lookup_kdc = true
+      dns_lookup_realm = false
+      rdns = false
+    [realms]
+      CERN.CH = {
+        kdc = cerndc.cern.ch
+        default_domain = cern.ch
+      }
+    [domain_realm]
+      .cern.ch = CERN.CH
+      cern.ch = CERN.CH
+
 ## Volume for the agent's dataset selections (<mountPath>/<folder>/<id>.txt). The PVC is
 ## ReadWriteOnce, so the backend is updated with the Recreate strategy while it is enabled.
 ## When disabled, an emptyDir is mounted instead and selections are lost on pod restart.
