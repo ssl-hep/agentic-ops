@@ -59,9 +59,9 @@ mcp:
 ## agent inside it, can never read them. Off by default. The password is not part of the chart:
 ## create the Secret yourself (see "Kerberos" in the README).
 kerberos:
-  enabled: false
+  enabled: true
   ## e.g. someone@CERN.CH
-  principal: ""
+  principal: "bgalewsk"
   existingSecret: agentic-ops-kerberos
   passwordKey: KERBEROS_PASSWORD
   ## Get a new ticket this often; keep it well under the realm's ticket lifetime (25h at CERN)
