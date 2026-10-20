@@ -1,8 +1,8 @@
 """The dataset agent: chats with a person to narrow an analysis's DAODs datasets to the ones a run needs.
 
-Per message it loads the system prompt from MLflow, gives the model the selection's dataset tools
-plus the allowlisted read-only Rucio tools from the AF MCP gateway, runs a LangChain tool-calling
-agent, and logs the message as one MLflow run with its trace.
+Per message it loads the system prompt from MLflow, gives the model the selection's dataset tools,
+a batched replica check and the allowlisted read-only Rucio tools from the AF MCP gateway, runs a
+LangChain tool-calling agent, and logs the message as one MLflow run with its trace.
 """
 
 import time
@@ -22,6 +22,7 @@ from mlflow.tracing.constant import TraceMetadataKey
 from app.agents.dataset_tools import dataset_tools
 from app.agents.llm import AgentError
 from app.agents.prompts import PromptSource
+from app.agents.replica_tools import replica_tools
 from app.schemas import ToolCallInfo
 from app.selections import Selection
 from app.settings import Settings
@@ -67,7 +68,7 @@ class Narrower:
     async def answer(self, selection: Selection, content: str) -> Answer:
         prompt = await self.prompt.load(folder=selection.folder, ref=selection.ref.ref, sha=selection.ref.short_sha)
         mcp_tools, mcp_note = await self._mcp_tools()
-        tools = dataset_tools(selection) + mcp_tools
+        tools = dataset_tools(selection) + replica_tools(selection, mcp_tools) + mcp_tools
         system = prompt.text + (f"\n\nNote from the app: {mcp_note}" if mcp_note else "")
 
         params = {
@@ -148,7 +149,8 @@ class Narrower:
             metrics={
                 "latency_seconds": time.monotonic() - started,
                 "tool_calls": len(tool_calls),
-                "rucio_tool_calls": sum(1 for c in tool_calls if c.name.startswith("rucio")),
+                # check_replicas counts once, however many datasets it checks
+                "rucio_tool_calls": sum(1 for c in tool_calls if c.name.startswith("rucio") or c.name == "check_replicas"),
                 "selection_size": len(selection.selected),
                 "selection_change": len(selection.selected) - before,
             },

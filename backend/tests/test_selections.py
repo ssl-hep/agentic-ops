@@ -19,6 +19,7 @@ from app.agents.dataset_tools import dataset_tools
 from app.agents.mcp_tools import select_tools
 from app.agents.narrower import Narrower
 from app.agents.prompts import SystemPrompt, render
+from app.agents.replica_tools import replica_tools
 from app.api import get_repository
 from app.gitlab import ReadOnlyGitLabClient
 from app.main import app
@@ -158,6 +159,82 @@ def test_mcp_tools_are_allowlisted_and_read_only() -> None:
     ]
     chosen = select_tools(tools, ["rucio_list*", "rucio_get*"])
     assert [t.name for t in chosen] == ["rucio_list_replicas", "rucio_get_did"]
+
+
+# ----- batched replica checks ----------------------------------------------------------
+
+REPLICA_TABLE = """\
+| rse | available_bytes | available_length | state |
+| --- | --- | --- | --- |
+| BNL-OSG2_DATADISK | 1.50 GB | 3 | AVAILABLE |
+| MWT2_DATADISK | 500.00 MB | 1 | AVAILABLE |
+| BNL-OSG2_DATADISK | 2.00 GB | 4 | AVAILABLE |
+| PIC_SCRATCHDISK | 10.86 GB | 7 | UNAVAILABLE |
+"""
+NOT_FOUND = "Error: Data identifier not found.\nDetails: Data identifier 'x' not found\n"
+
+
+def fake_replica_tools(answers: dict[str, str], dataset_answers: dict[str, str] | None = None) -> tuple[list, list[str]]:
+    """Gateway replica tools answering by DID, recording the DIDs asked for."""
+    asked: list[str] = []
+
+    def make(name: str, by_did: dict[str, str]) -> StructuredTool:
+        async def run(did: str, limit: int = 50) -> list[dict]:
+            asked.append(did)
+            if did not in by_did:
+                raise RuntimeError("gateway down")
+            return [{"type": "text", "text": by_did[did]}]
+
+        return StructuredTool.from_function(coroutine=run, name=name, description=name)
+
+    tools = [make("rucio_list_container_replicas", answers)]
+    if dataset_answers is not None:
+        tools.append(make("rucio_list_dataset_replicas", dataset_answers))
+    return tools, asked
+
+
+def check(selection: Selection, mcp_tools: list, **args: Any) -> str:
+    (tool,) = replica_tools(selection, mcp_tools)
+    return asyncio.run(tool.ainvoke(args))
+
+
+def test_check_replicas_defaults_to_the_selection_and_folds_rows_per_rse(selection: Selection) -> None:
+    selection.add([MC23E, DATA15])
+    mcp, asked = fake_replica_tools({f"mc23_13p6TeV:{MC23E}": REPLICA_TABLE, f"data15_13TeV:{DATA15}": NOT_FOUND})
+    out = check(selection, mcp)
+    assert sorted(asked) == sorted([f"mc23_13p6TeV:{MC23E}", f"data15_13TeV:{DATA15}"])
+    assert out.startswith('<evidence source="rucio">')
+    assert "Checked 2 datasets: 1 with available replicas, 1 not found in Rucio, 0 checks failed" in out
+    # Rows for one RSE add up; the biggest RSE comes first; unavailable rows are only counted
+    assert (
+        f"{MC23E}: available at 2 RSEs: BNL-OSG2_DATADISK (2 datasets, 7 files, 3.50 GB), "
+        "MWT2_DATADISK (1 datasets, 1 files, 500.00 MB) [1 unavailable replicas]"
+    ) in out
+    assert f"{DATA15}: not found in Rucio" in out
+
+
+def test_check_replicas_by_name_filters_rses_and_reports_failures(selection: Selection) -> None:
+    mcp, asked = fake_replica_tools({f"mc23_13p6TeV:{MC23A}": REPLICA_TABLE})
+    out = check(selection, mcp, names=[f"mc23_13p6TeV:{MC23A}/", MC23A, ODD], rse="mwt2")
+    assert len(asked) == 2  # the scoped and bare spellings are one dataset
+    # The PIC scratch-disk replica is outside the filter, so it is not mentioned
+    assert f"{MC23A}: available at 1 RSEs at RSEs matching 'mwt2': MWT2_DATADISK (1 datasets, 1 files, 500.00 MB)\n" in out
+    assert f"{ODD}: check failed: RuntimeError: gateway down" in out
+
+
+def test_check_replicas_falls_back_to_the_dataset_tool_for_plain_datasets(selection: Selection) -> None:
+    did = f"mc23_13p6TeV:{MC23A}"
+    mcp, asked = fake_replica_tools({did: "No dataset replicas found."}, {did: REPLICA_TABLE})
+    assert "available at 2 RSEs" in check(selection, mcp, names=[MC23A])
+    assert asked == [did, did]
+
+
+def test_check_replicas_needs_the_gateway_and_caps_batches(selection: Selection) -> None:
+    assert replica_tools(selection, []) == []
+    mcp, asked = fake_replica_tools({})
+    assert "nothing to check" in check(selection, mcp)
+    out = check(selection, mcp, names=[f"mc23_13p6TeV.{700000 + i}.S.deriv.DAOD_PHYS.e1_p1" for i in range(101)])
+    assert "more than 100 per call" in out and asked == []
 
 
 def test_split_credentials() -> None:
