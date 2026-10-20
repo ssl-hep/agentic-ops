@@ -8,6 +8,11 @@ metadata:
     {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
 spec:
   replicas: {{ .Values.backend.replicaCount }}
+  {{- if .Values.scratch.enabled }}
+  ## The scratch PVC is ReadWriteOnce: stop the old pod before starting the new one
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "agentic-ops.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
@@ -22,6 +27,9 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      securityContext:
+        ## The backend image runs as uid 10001; let it write the scratch volume
+        fsGroup: 10001
       containers:
         - name: {{ $component }}
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
@@ -56,16 +64,6 @@ spec:
             - name: LLM_MODEL
               value: {{ .model | quote }}
             {{- end }}
-            {{- if .builderModel }}
-            - name: LLM_BUILDER_MODEL
-              value: {{ .builderModel | quote }}
-            {{- end }}
-            {{- if .reviewerModel }}
-            - name: LLM_REVIEWER_MODEL
-              value: {{ .reviewerModel | quote }}
-            {{- end }}
-            - name: LLM_STRUCTURED_OUTPUT
-              value: {{ .structuredOutput | quote }}
             - name: LLM_TEMPERATURE
               value: {{ .temperature | quote }}
             - name: LLM_TIMEOUT_SECONDS
@@ -76,9 +74,50 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .existingSecret }}
+                  key: {{ .apiKeyKey }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.mlflow }}
+            {{- if .trackingUri }}
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .trackingUri | quote }}
+            {{- end }}
+            - name: MLFLOW_EXPERIMENT
+              value: {{ .experiment | quote }}
+            - name: MLFLOW_PROMPT
+              value: {{ .prompt | quote }}
+            - name: MLFLOW_TRACKING_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .usernameKey }}
+                  optional: true
+            - name: MLFLOW_TRACKING_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
+                  key: {{ .passwordKey }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.mcp }}
+            {{- if .url }}
+            - name: MCP_URL
+              value: {{ .url | quote }}
+            {{- end }}
+            - name: MCP_TOOL_ALLOWLIST
+              value: {{ .toolAllowlist | toJson | quote }}
+            - name: MCP_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret }}
                   key: {{ .tokenKey }}
                   optional: true
             {{- end }}
+            - name: SCRATCH_DIR
+              value: {{ .Values.scratch.mountPath | quote }}
+          volumeMounts:
+            - name: scratch
+              mountPath: {{ .Values.scratch.mountPath }}
           readinessProbe:
             httpGet:
               path: /healthz
@@ -90,4 +129,12 @@ spec:
           {{- with .Values.backend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: scratch
+          {{- if .Values.scratch.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "agentic-ops.scratchPvcName" . }}
+          {{- else }}
+          emptyDir: {}
           {{- end }}

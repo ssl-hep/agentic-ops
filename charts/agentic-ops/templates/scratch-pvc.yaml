@@ -1,0 +1,17 @@
+{{- if .Values.scratch.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "agentic-ops.scratchPvcName" . }}
+  labels:
+    {{- include "agentic-ops.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.scratch.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.scratch.size }}
+{{- end }}

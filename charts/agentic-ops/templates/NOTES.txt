@@ -12,19 +12,16 @@ GitLab token for reading EWKit ({{ .Values.gitlab.project }}) comes from Secret 
   kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
 {{- end }}
 
-Model endpoint for the run setup agents:
+Dataset agent:
 {{- if and .Values.llm.baseUrl .Values.llm.model }}
-  {{ .Values.llm.model }} at {{ .Values.llm.baseUrl }}
+  enabled, model "{{ .Values.llm.model }}" at {{ .Values.llm.baseUrl }}.
 {{- else }}
-  NOT SET: the agents are off (the Run setup form and input checks still work).
-  Set llm.baseUrl and llm.model as described under "Model endpoint" in the README.
+  OFF. Set llm.baseUrl and llm.model to enable it (see "Dataset agent" in the README).
 {{- end }}
-  API token from Secret "{{ .Values.llm.existingSecret }}":
-{{- if (lookup "v1" "Secret" .Release.Namespace .Values.llm.existingSecret) }} found.
-{{- else }} NOT FOUND (fine for endpoints without auth). See "Model endpoint" in the README.
+{{- range $s := list .Values.llm.existingSecret .Values.mlflow.existingSecret .Values.mcp.existingSecret }}
+  Secret "{{ $s }}": {{ if (lookup "v1" "Secret" $.Release.Namespace $s) }}found{{ else }}NOT FOUND{{ end }}
 {{- end }}
-  After creating or replacing the Secret, restart the backend:
-  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
+  Selections are written to {{ .Values.scratch.mountPath }}{{ if .Values.scratch.enabled }} (PVC {{ include "agentic-ops.scratchPvcName" . }}){{ else }} (emptyDir; lost on restart){{ end }}.
 
 Backend health check:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentic-ops.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}

@@ -4,15 +4,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.agents.checkpoint import open_checkpointer
-from app.agents.graph import build_setup_graph
-from app.agents.llm import chat_model
+from app import tracking
+from app.agents import mcp_tools
+from app.agents.llm import AgentError, chat_model
+from app.agents.narrower import Narrower
+from app.agents.prompts import MlflowPrompt
 from app.api import router as ewkit_router
 from app.gitlab import GitLabError, ReadOnlyGitLabClient
 from app.repository import EWKitRepository, NotFoundError
+from app.selection_api import router as selection_router
+from app.selections import SelectionStore
 from app.settings import get_settings
-from app.setup_api import AgentModels
-from app.setup_api import router as setup_router
 
 
 @asynccontextmanager
@@ -26,18 +28,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_concurrency=settings.gitlab_max_concurrency,
     )
     app.state.repository = EWKitRepository(client)
-    app.state.agent_models = AgentModels(
-        builder=chat_model(settings, "builder"), reviewer=chat_model(settings, "reviewer")
-    )
-    async with open_checkpointer(settings) as checkpointer:
-        app.state.setup_graph = build_setup_graph(checkpointer)
-        yield
+    app.state.selections = SelectionStore(settings.scratch_dir)
+    app.state.narrower = None
+    if (model := chat_model(settings)) is not None:
+        runs = tracking.start_tracing(settings)
+        app.state.narrower = Narrower(
+            settings,
+            model,
+            MlflowPrompt(settings.mlflow_prompt, configured=tracking.tracking_uri(settings) is not None),
+            lambda: mcp_tools.load_tools(settings),
+            runs,
+        )
+    yield
     await client.aclose()
 
 
 app = FastAPI(title="agentic-ops backend", lifespan=lifespan)
 app.include_router(ewkit_router)
-app.include_router(setup_router)
+app.include_router(selection_router)
 
 
 @app.exception_handler(NotFoundError)
@@ -48,6 +56,11 @@ async def not_found(_: Request, exc: NotFoundError) -> JSONResponse:
 @app.exception_handler(GitLabError)
 async def gitlab_error(_: Request, exc: GitLabError) -> JSONResponse:
     return JSONResponse(status_code=502, content={"detail": exc.message})
+
+
+@app.exception_handler(AgentError)
+async def agent_error(_: Request, exc: AgentError) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
 @app.get("/healthz")

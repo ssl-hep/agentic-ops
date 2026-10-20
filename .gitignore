@@ -1,8 +1,6 @@
 # Local secrets: Kubernetes Secret manifests and env files with tokens
 secrets/
 .env
-.env.*
-!.env.example
 
 # Python
 __pycache__/
@@ -20,3 +18,6 @@ next-env.d.ts
 charts/*/charts/*.tgz
 
 .DS_Store
+
+# Dataset agent scratch selections (local dev)
+backend/scratch/

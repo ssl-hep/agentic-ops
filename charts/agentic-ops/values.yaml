@@ -18,26 +18,51 @@ gitlab:
   existingSecret: agentic-ops-gitlab
   tokenKey: GITLAB_TOKEN
 
-## OpenAI-compatible model endpoint for the run setup agents (builder and reviewer).
-## The API token is not part of the chart: create the Secret yourself (see "Model
-## endpoint" in the README). Without baseUrl and model the agents are off, and the
-## Run setup form and its input checks still work.
+## OpenAI-compatible chat completions endpoint for the dataset-narrowing agent. The agent is
+## off unless both baseUrl and model are set. The API key is not part of the chart: create
+## the Secret yourself (see "Dataset agent" in the README).
 llm:
   ## Base URL up to and including /v1, e.g. https://llm.example.org/v1
   baseUrl: "https://lumen.ncsa.illinois.edu/v1"
-  model: "deepseek"
-  ## Optional per-agent overrides of model
-  builderModel: ""
-  reviewerModel: ""
-  ## How the agents get structured answers: function_calling (works with most
-  ## OpenAI-compatible servers), json_schema (OpenAI structured outputs) or json_mode
-  structuredOutput: function_calling
-  temperature: 0
+  model: "glm"
+  temperature: 0.0
   timeoutSeconds: 120
-  ## Repository tool calls each agent may make before it must answer
-  maxToolCalls: 8
+  ## Tool calls (dataset and Rucio) the agent may make per message before it must answer
+  maxToolCalls: 12
   existingSecret: agentic-ops-llm
-  tokenKey: LLM_API_KEY
+  apiKeyKey: LLM_API_KEY
+
+## MLflow tracking server. The agent loads its system prompt from the Prompt Registry and logs
+## every message as a run in the experiment. Credentials come from a Secret you create.
+mlflow:
+  ## Without credentials in it; they come from the Secret
+  trackingUri: https://mlflow.servicex.ssl-hep.org
+  experiment: ew-kit
+  ## Prompt name and alias (or version) in the Prompt Registry
+  prompt: "ew-kit-dataset-narrower@champion"
+  existingSecret: agentic-ops-mlflow
+  usernameKey: MLFLOW_TRACKING_USERNAME
+  passwordKey: MLFLOW_TRACKING_PASSWORD
+
+## AF MCP gateway, for read-only Rucio lookups with a shared service token from a Secret.
+mcp:
+  url: https://mcp.af.uchicago.edu/mcp/
+  ## Globs of the MCP tools the agent may call; tools not marked read-only are dropped regardless
+  toolAllowlist:
+    - "rucio_list*"
+    - "rucio_get*"
+  existingSecret: agentic-ops-mcp
+  tokenKey: MCP_BEARER_TOKEN
+
+## Volume for the agent's dataset selections (<mountPath>/<folder>/<id>.txt). The PVC is
+## ReadWriteOnce, so the backend is updated with the Recreate strategy while it is enabled.
+## When disabled, an emptyDir is mounted instead and selections are lost on pod restart.
+scratch:
+  enabled: true
+  size: 1Gi
+  ## Empty uses the cluster's default StorageClass
+  storageClass: ""
+  mountPath: /scratch
 
 backend:
   replicaCount: 1

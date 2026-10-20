@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { createSetup } from "@/app/setups/actions";
 import { CampaignMatrix } from "@/components/CampaignMatrix";
 import { ErrorPanel } from "@/components/ErrorPanel";
 import { RefBar } from "@/components/RefBar";
 import { StatusBadge } from "@/components/StatusBadge";
-import { SubmitButton } from "@/components/SubmitButton";
 import { api, type AnalysisDetail, type ConfigInfo, type SampleListDetail } from "@/lib/api";
 import { analysisHref, fmt, href, param } from "@/lib/format";
 
@@ -43,16 +41,11 @@ export default async function AnalysisPage(props: PageProps<"/analyses/[folder]"
           {a.code_owners.length > 0 && <> · code owners {a.code_owners.join(" ")}</>}
           {a.ntuple_lists.length > 0 && <> · {a.ntuple_lists.length} n-tuple lists</>}
         </p>
-        {a.status === "runnable" && (
-          <form action={createSetup} className="setup-start">
-            <input type="hidden" name="analysis" value={a.folder} />
-            <input type="hidden" name="ref" value={data.ref.ref} />
-            <SubmitButton pendingText="Checking…">Set up a run</SubmitButton>
-            <span className="small muted">
-              at <span className="mono">{data.ref.ref}</span>, starting from every list in the folder
-            </span>
-          </form>
-        )}
+        <p className="page-actions">
+          <Link href={href(`/analyses/${encodeURIComponent(a.folder)}/run`, { ref: gitRef })} className="button-link">
+            Configure run
+          </Link>
+        </p>
       </header>
       <RefBar action={analysisHref(a.folder)} refs={refs} resolved={data.ref} image={data.image} />
 
