@@ -11,6 +11,8 @@ export interface RunRequest {
   config: string;
   sample_lists: string[];
   campaigns: string[];
+  /** Dataset agent selection that replaces sample_lists and campaigns when set */
+  selection_id?: string;
   queue: Queue;
   allow_mwt2_overflow: boolean;
   files_per_job: number;
@@ -62,6 +64,7 @@ export function parseRunForm(form: FormData): { request: RunRequest; errors: str
   const queue = text("queue");
   const testJob = form.get("test_job") === "on";
   const maxEvents = text("max_events");
+  const selectionId = text("selection_id");
 
   const request: RunRequest = {
     folder: text("folder"),
@@ -70,6 +73,7 @@ export function parseRunForm(form: FormData): { request: RunRequest; errors: str
     config: text("config"),
     sample_lists: form.getAll("sample_lists").map(String),
     campaigns: form.getAll("campaigns").map(String),
+    selection_id: selectionId || undefined,
     queue: queue === "long" ? "long" : "short",
     allow_mwt2_overflow: form.get("allow_mwt2_overflow") === "on",
     files_per_job: int(form, "files_per_job", "Files per job", errors),
@@ -84,8 +88,10 @@ export function parseRunForm(form: FormData): { request: RunRequest; errors: str
   };
 
   if (!request.config) errors.push("Pick a config.");
-  if (request.sample_lists.length === 0) errors.push("Pick at least one sample list.");
-  if (request.campaigns.length === 0) errors.push("Pick at least one campaign.");
+  if (!selectionId) {
+    if (request.sample_lists.length === 0) errors.push("Pick at least one sample list.");
+    if (request.campaigns.length === 0) errors.push("Pick at least one campaign.");
+  }
   if (!/^[A-Za-z0-9._-]+$/.test(request.output_name)) {
     errors.push("Output name may only use letters, digits, dots, dashes and underscores.");
   }

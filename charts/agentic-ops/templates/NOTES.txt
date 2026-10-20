@@ -12,6 +12,17 @@ GitLab token for reading EWKit ({{ .Values.gitlab.project }}) comes from Secret 
   kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "agentic-ops.fullname" . }}-backend
 {{- end }}
 
+Dataset agent:
+{{- if and .Values.llm.baseUrl .Values.llm.model }}
+  enabled, model "{{ .Values.llm.model }}" at {{ .Values.llm.baseUrl }}.
+{{- else }}
+  OFF. Set llm.baseUrl and llm.model to enable it (see "Dataset agent" in the README).
+{{- end }}
+{{- range $s := list .Values.llm.existingSecret .Values.mlflow.existingSecret .Values.mcp.existingSecret }}
+  Secret "{{ $s }}": {{ if (lookup "v1" "Secret" $.Release.Namespace $s) }}found{{ else }}NOT FOUND{{ end }}
+{{- end }}
+  Selections are written to {{ .Values.scratch.mountPath }}{{ if .Values.scratch.enabled }} (PVC {{ include "agentic-ops.scratchPvcName" . }}){{ else }} (emptyDir; lost on restart){{ end }}.
+
 Backend health check:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "agentic-ops.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
   curl http://localhost:{{ .Values.backend.service.port }}/healthz

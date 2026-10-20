@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { ErrorPanel } from "@/components/ErrorPanel";
 import { RefBar } from "@/components/RefBar";
-import { RunForm } from "@/components/RunForm";
+import { RunWorkspace } from "@/components/RunWorkspace";
 import { StatusBadge } from "@/components/StatusBadge";
 import { api, type AnalysisDetail } from "@/lib/api";
 import { analysisHref, href, param } from "@/lib/format";
 import { submitRun } from "./actions";
+import { createSelection, getSelection, sendSelectionMessage } from "./selection-actions";
 
 export default async function ConfigureRunPage(props: PageProps<"/analyses/[folder]/run">) {
   const { folder: rawFolder } = await props.params;
@@ -45,8 +46,15 @@ export default async function ConfigureRunPage(props: PageProps<"/analyses/[fold
         </ul>
       )}
 
-      {/* Keyed by SHA so the form's defaults follow a ref change */}
-      <RunForm key={data.ref.sha} analysis={a} resolved={data.ref} image={data.image} submitRun={submitRun} />
+      {/* Keyed by SHA so the form's defaults and the agent's selection follow a ref change */}
+      <RunWorkspace
+        key={data.ref.sha}
+        analysis={a}
+        resolved={data.ref}
+        image={data.image}
+        submitRun={submitRun}
+        agent={{ createSelection, sendSelectionMessage, getSelection }}
+      />
     </>
   );
 }

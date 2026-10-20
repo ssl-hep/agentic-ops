@@ -142,3 +142,49 @@ class ConfigFile(BaseModel):
     folder: str
     config: ConfigInfo
     content: str
+
+
+class SelectionSummary(BaseModel):
+    count: int
+    by_run: dict[str, int]
+    by_sample: dict[str, int]
+    by_campaign: dict[str, int]
+    # The scratch file on the backend's volume, once written
+    path: str | None = None
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class SelectionState(BaseModel):
+    id: str
+    folder: str
+    sha: str
+    short_sha: str
+    ref: str
+    selection: SelectionSummary
+    # Every dataset in the analysis's DAODs lists, for comparison
+    available: SelectionSummary
+    messages: list[ChatMessage]
+
+
+class CreateSelection(BaseModel):
+    ref: str | None = None
+
+
+class SendMessage(BaseModel):
+    content: str
+
+
+class ToolCallInfo(BaseModel):
+    name: str
+    args: dict
+
+
+class SelectionReply(BaseModel):
+    reply: str
+    selection: SelectionSummary
+    tool_calls: list[ToolCallInfo]
+    mlflow_run_id: str | None = None

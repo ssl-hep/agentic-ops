@@ -1,23 +1,29 @@
 "use client";
 
 import { startTransition, useActionState, useState, type FormEvent } from "react";
+import type { ActiveSelection } from "@/components/DatasetAgentPanel";
 import type { AnalysisSummary, ImageStatus, ResolvedRef } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { QUEUES, RUN_DEFAULTS, type RunFormState } from "@/lib/run";
 
 type SubmitRun = (prev: RunFormState, form: FormData) => Promise<RunFormState>;
 
-/** Run parameters for one analysis at one commit, with a live count of what is selected. */
+/**
+ * Run parameters for one analysis at one commit, with a live count of what is selected. An active
+ * agent selection replaces the sample-list and campaign choices.
+ */
 export function RunForm({
   analysis: a,
   resolved,
   image,
   submitRun,
+  selection,
 }: {
   analysis: AnalysisSummary;
   resolved: ResolvedRef;
   image: ImageStatus;
   submitRun: SubmitRun;
+  selection: ActiveSelection | null;
 }) {
   const [state, formAction, pending] = useActionState(submitRun, { status: "idle" });
   const campaigns = Object.keys(a.campaigns);
@@ -34,8 +40,11 @@ export function RunForm({
 
   function onChange(event: FormEvent<HTMLFormElement>) {
     const form = new FormData(event.currentTarget);
-    setLists(form.getAll("sample_lists").map(String));
-    setChosen(form.getAll("campaigns").map(String));
+    // Disabled checkboxes drop out of the form data; keep the choices for when the selection is turned off
+    if (!selection) {
+      setLists(form.getAll("sample_lists").map(String));
+      setChosen(form.getAll("campaigns").map(String));
+    }
     setTestJob(form.get("test_job") === "on");
   }
 
@@ -51,6 +60,7 @@ export function RunForm({
       <input type="hidden" name="folder" value={a.folder} />
       <input type="hidden" name="ref" value={resolved.ref} />
       <input type="hidden" name="sha" value={resolved.sha} />
+      {selection && <input type="hidden" name="selection_id" value={selection.id} />}
 
       <fieldset>
         <legend>Inputs</legend>
@@ -98,7 +108,7 @@ export function RunForm({
                   name="sample_lists"
                   value={s.name}
                   defaultChecked={s.datasets > 0}
-                  disabled={s.datasets === 0}
+                  disabled={s.datasets === 0 || !!selection}
                 />{" "}
                 <span className="mono">{s.name}</span>{" "}
                 <span className="muted small">{s.datasets === 0 ? "empty" : `${fmt(s.datasets)} dataset${s.datasets === 1 ? "" : "s"}`}</span>
@@ -110,14 +120,27 @@ export function RunForm({
         <div className="checks checks-row">
           {campaigns.map((c) => (
             <label key={c} className={c === "unknown" ? "warn-text" : undefined}>
-              <input type="checkbox" name="campaigns" value={c} defaultChecked={c !== "unknown"} />{" "}
+              <input
+                type="checkbox"
+                name="campaigns"
+                value={c}
+                defaultChecked={c !== "unknown"}
+                disabled={!!selection}
+              />{" "}
               <span className="mono">{c}</span> <span className="muted small">{fmt(perCampaign(c))}</span>
             </label>
           ))}
         </div>
-        <p className="small">
-          <span className="strong">{fmt(datasets)}</span> dataset{datasets === 1 ? "" : "s"} selected
-        </p>
+        {selection ? (
+          <p className="small info-text">
+            <span className="strong">{fmt(selection.count)}</span> dataset{selection.count === 1 ? "" : "s"} from agent
+            selection
+          </p>
+        ) : (
+          <p className="small">
+            <span className="strong">{fmt(datasets)}</span> dataset{datasets === 1 ? "" : "s"} selected
+          </p>
+        )}
       </fieldset>
 
       <fieldset>

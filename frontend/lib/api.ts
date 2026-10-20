@@ -137,6 +137,38 @@ export interface ConfigFile {
   content: string;
 }
 
+export interface SelectionSummary {
+  count: number;
+  by_run: Record<string, number>;
+  by_sample: Record<string, number>;
+  by_campaign: Record<string, number>;
+  /** Scratch sample-list file the backend wrote, once there is a selection */
+  path: string | null;
+}
+
+export interface SelectionMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface Selection {
+  id: string;
+  folder: string;
+  sha: string;
+  ref: string;
+  selection: SelectionSummary;
+  /** Everything in the analysis's sample lists that the agent can choose from */
+  available?: SelectionSummary;
+  messages: SelectionMessage[];
+}
+
+export interface SelectionReply {
+  reply: string;
+  selection: SelectionSummary;
+  tool_calls: { name: string; args: Record<string, unknown> }[];
+  mlflow_run_id: string | null;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -146,15 +178,11 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
-  const url = new URL(path, BACKEND_URL);
-  for (const [key, value] of Object.entries(params)) {
-    if (value) url.searchParams.set(key, value);
-  }
+async function send<T>(url: URL, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
     // The backend caches by commit SHA; always ask it so ref names resolve fresh
-    response = await fetch(url, { cache: "no-store" });
+    response = await fetch(url, { cache: "no-store", ...init });
   } catch {
     throw new ApiError(503, `Cannot reach the backend at ${BACKEND_URL}`);
   }
@@ -163,6 +191,22 @@ async function get<T>(path: string, params: Record<string, string | undefined> =
     throw new ApiError(response.status, body?.detail ?? `Backend returned ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
+  const url = new URL(path, BACKEND_URL);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.set(key, value);
+  }
+  return send<T>(url);
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  return send<T>(new URL(path, BACKEND_URL), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 const seg = encodeURIComponent;
@@ -176,4 +220,14 @@ export const api = {
     get<SampleListDetail>(`/api/ewkit/analyses/${seg(folder)}/samples/${seg(name)}`, { ref }),
   configFile: (folder: string, name: string, ref?: string) =>
     get<ConfigFile>(`/api/ewkit/analyses/${seg(folder)}/configs/${seg(name)}`, { ref }),
+  createSelection: (folder: string, ref: string | null) =>
+    post<Selection>(`/api/ewkit/analyses/${seg(folder)}/selections`, { ref }),
+  // The agent may take a couple of minutes to answer: it queries Rucio through MCP
+  sendSelectionMessage: (folder: string, id: string, content: string) =>
+    post<SelectionReply>(`/api/ewkit/analyses/${seg(folder)}/selections/${seg(id)}/messages`, { content }),
+  selection: (folder: string, id: string) => get<Selection>(`/api/ewkit/analyses/${seg(folder)}/selections/${seg(id)}`),
 };
+
+/** Backend URL of a selection's sample-list file, which is plain text rather than JSON */
+export const selectionDatasetsUrl = (folder: string, id: string) =>
+  new URL(`/api/ewkit/analyses/${seg(folder)}/selections/${seg(id)}/datasets.txt`, BACKEND_URL);

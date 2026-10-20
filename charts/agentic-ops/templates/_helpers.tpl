@@ -37,3 +37,8 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* Name of the backend's scratch PersistentVolumeClaim */}}
+{{- define "agentic-ops.scratchPvcName" -}}
+{{- include "agentic-ops.fullname" . }}-scratch
+{{- end }}
