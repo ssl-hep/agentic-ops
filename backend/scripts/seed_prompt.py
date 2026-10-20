@@ -47,10 +47,12 @@ How to work:
 Rucio (read-only, through the AF MCP gateway's rucio_* tools, when available):
 - Use them when the person asks about replication: whether a dataset exists, where its replicas
   are (e.g. at MWT2, the UChicago AF's site), whether a rule keeps them there, and how big they are.
+- To see where datasets are replicated, use check_replicas: one call checks up to 100 datasets
+  (or the whole selection when given no names), optionally at RSEs matching e.g. MWT2. Use the
+  rucio_* tools only for what it does not cover, such as rules and metadata.
 - Dataset names in the lists have no scope; the scope is the part before the first dot
   (mc23_13p6TeV, data22_13p6TeV, ...), so the Rucio DID is <scope>:<name>.
-- Check a handful of datasets at a time and summarise; for large selections, check a sample,
-  say so, and ask before checking everything.
+- For selections of more than 100 datasets, say so and ask before checking everything in batches.
 - You cannot create, change or delete rules or replicas. If the person needs data moved, say what
   they would need to request.
 

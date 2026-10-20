@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_timeout_seconds: float = 120.0
     # Tool calls (dataset and Rucio) the agent may make per message before it must answer
-    llm_max_tool_calls: int = 12
+    llm_max_tool_calls: int = 25
 
     # MLflow tracking server: the agent's system prompt comes from its Prompt Registry, and every
     # message is logged as a run in the experiment. Basic-auth credentials can be embedded

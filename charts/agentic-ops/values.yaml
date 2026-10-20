@@ -28,7 +28,7 @@ llm:
   temperature: 0.0
   timeoutSeconds: 120
   ## Tool calls (dataset and Rucio) the agent may make per message before it must answer
-  maxToolCalls: 12
+  maxToolCalls: 25
   existingSecret: agentic-ops-llm
   apiKeyKey: LLM_API_KEY
 

@@ -264,7 +264,7 @@ settings come from environment variables or `backend/.env`:
 | `GITLAB_TOKEN` | none; see [GitLab token](#gitlab-token) |
 | `LLM_BASE_URL`, `LLM_MODEL` | none; the [dataset agent](#dataset-agent) is off without both |
 | `LLM_API_KEY` | none |
-| `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOOL_CALLS` | `0.0`, `120`, `12` |
+| `LLM_TEMPERATURE`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOOL_CALLS` | `0.0`, `120`, `25` |
 | `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_USERNAME`, `MLFLOW_TRACKING_PASSWORD` | none |
 | `MLFLOW_EXPERIMENT`, `MLFLOW_PROMPT` | `ew-kit`, `ew-kit-dataset-narrower@champion` |
 | `MCP_URL` | `https://mcp.af.uchicago.edu/mcp/` |
