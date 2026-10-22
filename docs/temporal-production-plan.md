@@ -27,6 +27,8 @@ It replaces two earlier designs:
    `docs/procedural-ops-credentials.md` on the `mlflow` branch).
 6. The Temporal server and its database run on Kubernetes. AF HTCondor workers reach gRPC
    endpoints on the internet (verified).
+7. Kubernetes pods cannot read `/data`. Everything that touches files there (builds, outputs,
+   manifests, logs) runs on the AF side; see [Work on `/data`](#work-on-data).
 
 ## Architecture overview
 
@@ -41,11 +43,13 @@ It replaces two earlier designs:
      ┌──────────────────────┘      │        └──────────────────────────────┐
      │ k8s worker pods             │                                       │ AF HTCondor jobs
      │  controller queue           │ ops-executor pod                      │  queue ewkit-<prod>-<mem>
-     │   planning, verification,   │  queue ops                            │  run_unit: EWRun.py on
-     │   reporting                 │  robot x509 + Rucio + condor creds    │  a chunk of files,
-     │  triage queue               │  ensure_rule, list_rules,             │  heartbeats, manifest
-     │   LLM key, read-only tools  │  condor_submit/rm, extend_rule        │
+     │   planning, reporting       │  queue ops                            │   run_unit: EWRun.py on a
+     │  triage queue               │  robot x509 + Rucio + condor creds    │   chunk of files, heartbeats
+     │   LLM key, read-only tools  │  ensure_rule, list_rules,             │  queue af-io
+     │                             │  condor_submit/rm, extend_rule        │   build, verify, logs,
+     │                             │                                       │   cleanup on /data
      └─────────────────────────────┴───────────────────────────────────────┘
+                                                                     /data (AF only, not visible to k8s)
 ```
 
 The pieces:
@@ -56,10 +60,11 @@ The pieces:
 | Postgres | k8s | Temporal persistence and visibility; agentic-ops schema for selections, approvals, snapshots and reporting |
 | backend | k8s, existing FastAPI app | Selection and agent APIs, approval API, Temporal client. The only place users act from |
 | TUI | AF login node or laptop | Thin client of the backend: narrow, approve, watch, decide |
-| controller workers | k8s pods | Workflows, plus activities that need no credentials: planning, verification, reporting |
+| controller workers | k8s pods | Workflows, plus activities that need no credentials and no files: planning, reporting |
 | ops-executor | k8s pod with a credential sidecar | The only holder of the robot x509, Rucio and HTCondor credentials. Polls `ops` only |
 | triage workers | k8s pods | The triage agent: LLM key and read-only tools. Polls `triage` only |
 | HTCondor workers | AF worker nodes | Poll `ewkit-<production>-<memclass>`, run units, heartbeat, write outputs |
+| af-io workers | AF worker nodes, small HTCondor jobs | Poll `af-io`: build EWKit, verify outputs, fetch logs, clean up, write lists. The only workers besides unit workers that touch `/data` |
 
 ## Core concepts
 
@@ -95,16 +100,20 @@ Workflow IDs are deterministic, so starting a workflow that already exists is a 
 
 Input: `production_id`.
 
-1. `build_ewkit` (activity, runs as a short HTCondor job through `ops`): check out EWKit at the
-   SHA, `asetup AnalysisBase,25.2.113`, build, and pack the InstallArea plus the worker
-   environment into a tarball. Record its digest on the production.
+1. `build_ewkit` on `af-io`: check out EWKit at the SHA, `asetup AnalysisBase,25.2.113`,
+   build, and pack the InstallArea plus the worker environment into tarballs under
+   `/data/agentic-ops/builds/<sha>/`. Return their paths and digests, which are recorded on the
+   production.
 2. Smoke test: run one unit per campaign with `-e 1000`. Wait for the launch approval
    (an Update from the backend).
 3. Start one child `DatasetWorkflow` per dataset, at most N running at once, in batches so the
    parent's history stays small. Use continue-as-new between batches.
 4. Start or update `PoolKeeperWorkflow` for this production.
-5. When every dataset is complete: `write_ntuple_lists` (the `data/<A>/ntuples/*.txt` files
-   `get_ntuples.py` produces today), `release_rules`, mark the production complete.
+5. When every dataset is complete: build the ntuple lists (the equivalent of the
+   `data/<A>/ntuples/*.txt` files `get_ntuples.py` produces today, but listing accepted output
+   paths) on `controller` from the reporting tables, offer them for download through the
+   backend, and write copies next to the outputs with `write_lists` on `af-io`. Then
+   `release_rules` and mark the production complete.
 
 Handles: `cancel` (cascades to children and running activities, then `condor_rm` by production
 tag), `pause`/`resume` (the pool keeper stops submitting), and a failure-batch signal from
@@ -119,7 +128,8 @@ Input: `production_id`, DID.
    to a person.
 2. Wait for replica signals from the watcher. Plan units as soon as all of their files are
    locked `OK`, so processing overlaps with transfer.
-3. Run each unit (`run_unit` on `ewkit-<production>-<memclass>`), then `verify_unit`.
+3. Run each unit (`run_unit` on `ewkit-<production>-<memclass>`), then `verify_unit` on
+   `af-io`.
 4. Handle permanent failures through the triage loop.
 5. When every unit is `DONE` or approved `EXCLUDED`: record the dataset as complete with its
    events, sum of weights, output list and exclusions, and tell the parent.
@@ -148,15 +158,23 @@ queue statistics) and running workers with targets, and calls `condor_submit` on
 workers, with the matching memory request per `memclass` queue. It stops when the production is
 paused, cancelled or done, and removes idle workers at the end.
 
+A separate `AfIoKeeperWorkflow` (one for the whole system) keeps at least one `af-io` worker
+running while any production is active or the `af-io` queue has a backlog, and adds more when
+the backlog grows. Verification, builds and cleanup stall without one, so its schedule-to-start
+latency is alerted on.
+
 ## The HTCondor worker
 
 ### What runs in the job
 
-Each job receives two tarballs through `transfer_input_files`: the EWKit build for the production
-and a self-contained worker Python environment (python-build-standalone plus `temporalio`, built
-for EL9). It:
+Each job is told the paths of two tarballs under `/data/agentic-ops/builds/<sha>/`: the EWKit
+build for the production and a self-contained worker Python environment (python-build-standalone
+plus `temporalio` and `uproot`, built for EL9). The ops pod submits jobs remotely and cannot read
+`/data`, so the tarballs are not sent with `transfer_input_files`; the job reads them from
+`/data` itself. A small bootstrap script, sent with the submission, does that. The job:
 
-1. Unpacks both into `$_CONDOR_SCRATCH_DIR`.
+1. Copies both tarballs into `$_CONDOR_SCRATCH_DIR`, checks their digests against the ones
+   recorded on the production, and unpacks them.
 2. Starts the worker shim in the bundled Python. The shim connects to Temporal with the
    production's client certificate and polls `ewkit-<production>-<memclass>` with one activity
    slot per requested core.
@@ -176,6 +194,7 @@ The worker code lives in EWKit, split so the core has no Temporal dependency:
 |---|---|
 | `python/EWUnit.py` | `run_unit(spec) -> manifest`: runs EWRun on a unit spec and writes the manifest. No Temporal import |
 | `share/EWWorker.py` | The Temporal shim: activity definition, heartbeats, walltime logic. Imports `temporalio` |
+| `share/EWAfIo.py` | The `af-io` worker: build, verify, fetch logs, clean up, write lists. Imports `temporalio` and `uproot` |
 | `share/build_worker_tarball.sh` | Builds the InstallArea tarball and the worker environment for a SHA |
 
 Unit spec (JSON): unit id, attempt, production, analysis, config name, tag, DID, file list
@@ -214,7 +233,9 @@ Unit states: `PLANNED`, `QUEUED`, `RUNNING`, `VERIFYING`, `DONE`, `RETRY_WAIT`, 
 
 ### Verification
 
-`verify_unit` accepts an attempt only if:
+`verify_unit` runs on `af-io`, so it reads the output directly from `/data`, on a different
+worker from the one that wrote it. It returns a small result (sizes, checksum, event counts, sum
+of weights, cutflow); k8s never needs the file. It accepts an attempt only if:
 
 - the output exists at its expected path and its size and checksum match the manifest
 - the tree and the CutBookkeeper histograms are present (uproot; no ROOT needed)
@@ -222,7 +243,7 @@ Unit states: `PLANNED`, `QUEUED`, `RUNNING`, `VERIFYING`, `DONE`, `RETRY_WAIT`, 
 - sum of weights is above zero for MC
 
 Accepting an attempt fixes it as the one that counts. Any later output for the same unit is
-recorded as a duplicate and deleted by cleanup.
+recorded as a duplicate and deleted by `cleanup_attempt` on `af-io`.
 
 ### Invariants
 
@@ -241,6 +262,29 @@ One query over `units`, grouped by production, dataset and state, excluding `DON
 `SUPERSEDED` and `CANCELLED`. Multiplied by the median unit runtime, it estimates core-hours left.
 Replica progress comes from the same tables via the watcher, so the TUI can show transfer and
 processing progress side by side.
+
+### Work on `/data`
+
+Kubernetes pods cannot read `/data`, so the rule is: any activity that reads or writes files
+there runs on the `af-io` queue, served by small HTCondor jobs on the AF. k8s only ever sees
+what those activities return.
+
+| Activity | Reads or writes | Returns |
+|---|---|---|
+| `build_ewkit` | Writes build and worker tarballs | Paths and digests |
+| `verify_unit` | Reads an output and its manifest | Sizes, checksum, events, sum of weights, cutflow |
+| `fetch_log` | Reads a job log | An excerpt capped at 64 KB |
+| `cleanup_attempt` | Deletes outputs of rejected or duplicate attempts | What was deleted |
+| `write_lists` | Writes ntuple lists next to the outputs | Paths |
+
+Rules for `af-io`:
+
+- Results stay small. Temporal keeps every payload in history, and the default limit is 2 MB
+  per payload, so logs and file listings are capped and summarised, never returned whole.
+- Paths are checked against the production's output and build roots before any read, write or
+  delete. A path outside them fails the activity as non-retryable.
+- `af-io` workers request a few cores and a few GB of memory, enough for a build. The queue is
+  shared by all productions; the activities take everything they need as input.
 
 ## Failure handling and triage
 
@@ -263,7 +307,8 @@ When a unit fails permanently, the dataset workflow:
 
 1. runs `collect_evidence` on `controller`: log tail, exit code, host, hold reason, events
    processed (all attached to the failure by a worker interceptor), replica state of the inputs,
-   and similar failures elsewhere in the production
+   and similar failures elsewhere in the production. If the agent needs more of a log than the
+   tail, `fetch_log` on `af-io` returns a bounded excerpt from `/data`
 2. matches known signatures with fixed rules (xrootd `[3010]`, `std::bad_alloc`, corrupt `TFile`)
    and only calls the agent for failures nothing recognises
 3. runs `triage` on the `triage` queue, which returns a typed proposal: an action from a closed
@@ -305,9 +350,10 @@ The credential isolation decision (D1) maps onto task queues:
 | Task queue | Polled by | Credentials |
 |---|---|---|
 | `ops` | ops-executor pod only | Robot x509 proxy (renewed by a sidecar from a long-lived Secret), Rucio account, HTCondor submit token |
-| `controller` | controller pods | Database role for the reporting schema; read access to outputs |
+| `controller` | controller pods | Database role for the reporting schema |
 | `triage` | triage pods | LLM key, MCP bearer token for read-only Rucio tools, MLflow |
 | `ewkit-<production>-<memclass>` | HTCondor jobs | A short-lived client certificate for that production |
+| `af-io` | small HTCondor jobs | A short-lived client certificate for `af-io`; write access to the production output and build roots on `/data` |
 
 The server is reachable from the internet, so:
 
@@ -358,7 +404,8 @@ agentic-ops:
 - Removed: the LangGraph run-setup stack on `sampledata`/`submit` is not carried forward. The
   Next.js frontend keeps the campaign browser; its run screens are superseded by the TUI.
 
-EWKit: `EWUnit.py`, `EWWorker.py`, `build_worker_tarball.sh`, and the fixes listed above.
+EWKit: `EWUnit.py`, `EWWorker.py`, `EWAfIo.py`, `build_worker_tarball.sh`, and the fixes
+listed above.
 
 ## Phases
 
@@ -370,7 +417,8 @@ EWKit: `EWUnit.py`, `EWWorker.py`, `build_worker_tarball.sh`, and the fixes list
 | Can a k8s pod submit to the AF schedd (IDTOKENs), and as which identity? | `condor_submit` from the ops pod lands a job in the AF pool |
 | Robot certificate and Rucio quota on `MWT2_UC_LOCALGROUPDISK`; who owns the rules? | Rule created and deleted by the robot account |
 | Do workers read replicas as local POSIX paths or through `root://`? Do they need a proxy? | A job reads one replicated file both ways, or we know which works |
-| Can k8s pods read job outputs under `/data`? | Decides whether `verify_unit` runs in k8s or on a `verify` queue served from the AF |
+| Do AF HTCondor jobs mount `/data`, and under which identity do they write there? | A job writes, reads back and deletes a file under the planned output root |
+| How quickly does a small `af-io` job start on the AF? | Typical start latency measured; decides how many `af-io` workers to keep warm |
 | AF long-queue walltime and memory limits | Unit size and worker walltime target chosen |
 | Worker-only authorization in open-source Temporal | Chosen design proven: a worker certificate cannot start or cancel workflows |
 
@@ -389,9 +437,9 @@ invariants holding.
 
 ### Phase 3: EWKit worker
 
-`EWUnit.py`, `EWWorker.py`, the tarball build, and the EWKit fixes, merged upstream. Done when a
-worker on the AF runs real units from two datasets against the test server and the manifests
-verify.
+`EWUnit.py`, `EWWorker.py`, `EWAfIo.py`, the tarball build, and the EWKit fixes, merged
+upstream. Done when an `af-io` worker builds a SHA, a unit worker on the AF runs real units from
+two datasets against the test server, and `verify_unit` accepts them.
 
 ### Phase 4: first real production
 
@@ -420,6 +468,10 @@ tuning, alerting, worker versioning drills, backup and restore test.
 - **Workflow code changes during long productions** need versioning discipline from day one.
 - **History size** for large productions: batching and continue-as-new must be in place before
   phase 6.
+- **`af-io` depends on HTCondor scheduling.** If no `af-io` job can start (pool full, outage),
+  builds, verification and cleanup stop, even though unit workers keep running. Keeping at
+  least one warm and alerting on its queue latency covers this; a dedicated slot or a higher
+  priority for `af-io` jobs would remove it, if the facility allows one.
 - **Exactly-once is not guaranteed.** Attempt-scoped outputs and verification are what prevent
   double-counted sum of weights; they are not optional.
 - **Snapshot drift** for growing data containers needs a policy: freeze, or extend with approval.
