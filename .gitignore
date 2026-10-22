@@ -1,0 +1,23 @@
+# Local secrets: Kubernetes Secret manifests and env files with tokens
+secrets/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Helm
+charts/*/charts/*.tgz
+
+.DS_Store
+
+# Dataset agent scratch selections (local dev)
+backend/scratch/
