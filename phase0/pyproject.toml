@@ -1,0 +1,20 @@
+[project]
+name = "agentic-ops-phase0"
+version = "0.1.0"
+description = "Phase 0 probes for EWKit production on Temporal"
+requires-python = ">=3.11"
+dependencies = [
+    "temporalio>=1.20",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

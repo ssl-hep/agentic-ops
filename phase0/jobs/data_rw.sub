@@ -1,0 +1,14 @@
+# Question 5: condor_submit data_rw.sub [ROOT=/data/<you>/agentic-ops/phase0]
+ROOT = /data/$ENV(USER)/agentic-ops/phase0
+universe = vanilla
+executable = data_rw.sh
+arguments = "$(ROOT) 100"
+environment = "CLUSTER=$(Cluster) PROC=$(Process)"
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+request_cpus = 1
+request_memory = 1GB
+output = logs/data_rw.$(Cluster).$(Process).out
+error = logs/data_rw.$(Cluster).$(Process).err
+log = logs/data_rw.$(Cluster).log
+queue

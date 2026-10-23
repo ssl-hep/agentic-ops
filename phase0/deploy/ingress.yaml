@@ -1,0 +1,28 @@
+# Public gRPC endpoint for the phase 0 server, rendered by deploy/render.sh (__HOST__).
+#
+# TLS passthrough: nginx routes on SNI and never terminates TLS, so the frontend sees the
+# client certificate itself and the authorizer can map it. This only works if the River
+# ingress controller runs with --enable-ssl-passthrough; without it nginx ignores the
+# annotation and serves its own certificate (the runbook shows how to tell). The fallback is
+# service-lb.yaml. No cert-manager: the server presents its certificate from our own CA.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: temporal-phase0
+  namespace: ai-ops
+  labels: {app.kubernetes.io/name: temporal-phase0}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: __HOST__
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: temporal-phase0
+                port: {name: grpc}

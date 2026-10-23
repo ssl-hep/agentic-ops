@@ -1,0 +1,17 @@
+# Phase 0 test server on this machine (OrbStack or Docker Desktop).
+#   phase0/certs/mkcerts.sh
+#   docker compose -f phase0/local/compose.yaml up -d --build
+# Certificates come from secrets/phase0-certs/server; only the frontend port is published.
+name: agentic-ops-phase0
+services:
+  temporal:
+    build: ../../temporal-server
+    image: agentic-ops-temporal-phase0:dev
+    command: ["--namespace", "phase0"]
+    ports:
+      - "127.0.0.1:7233:7233"
+    volumes:
+      - ../../secrets/phase0-certs/server:/etc/temporal/tls:ro
+      - temporal-data:/var/lib/temporal
+volumes:
+  temporal-data:

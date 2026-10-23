@@ -21,3 +21,8 @@ charts/*/charts/*.tgz
 
 # Dataset agent scratch selections (local dev)
 backend/scratch/
+
+# Phase 0 build outputs and job logs
+phase0/workerenv/dist/
+phase0/jobs/logs/
+phase0/jobs/pfns.txt

@@ -1,0 +1,14 @@
+# Fallback if the ingress controller cannot pass TLS through: expose the frontend directly.
+# Needs a LoadBalancer implementation on River (or change the type to NodePort) and a DNS
+# name for the address it gets, which must be in the server certificate (mkcerts.sh -n).
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-phase0-public
+  namespace: ai-ops
+  labels: {app.kubernetes.io/name: temporal-phase0}
+spec:
+  type: LoadBalancer
+  selector: {app.kubernetes.io/name: temporal-phase0}
+  ports:
+    - {name: grpc, port: 7233, targetPort: grpc}

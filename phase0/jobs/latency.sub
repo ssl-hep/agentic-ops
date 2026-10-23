@@ -1,0 +1,16 @@
+# Question 6: how long does a small af-io-sized job wait before it starts?
+#   condor_submit latency.sub            (then probes/latency_report.py <cluster>)
+# Twenty jobs with the af-io request (2 cores, 4 GB). Run it at three different times of day.
+universe = vanilla
+executable = /bin/sleep
+arguments = 30
+transfer_executable = false
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+request_cpus = 2
+request_memory = 4GB
+request_disk = 1GB
+output = /dev/null
+error = /dev/null
+log = logs/latency.$(Cluster).log
+queue 20

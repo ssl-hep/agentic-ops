@@ -1,0 +1,19 @@
+# Question 4: condor_submit replica_read.sub [PFNS=pfns.txt] [XCACHE=root://host:port]
+# PFNS comes from probes/rucio_replicas.py pfns. Needs a valid VOMS proxy
+# (voms-proxy-init -voms atlas); the job tries each PFN with and without it, directly and
+# through XCache.
+PFNS = pfns.txt
+XCACHE = root://xcache.af.uchicago.edu:1094
+universe = vanilla
+executable = replica_read.sh
+arguments = "$Fnx(PFNS) $(XCACHE)"
+transfer_input_files = $(PFNS)
+use_x509userproxy = true
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+request_cpus = 1
+request_memory = 2GB
+output = logs/replica_read.$(Cluster).$(Process).out
+error = logs/replica_read.$(Cluster).$(Process).err
+log = logs/replica_read.$(Cluster).log
+queue

@@ -1,0 +1,4 @@
+# Worker environment for HTCondor jobs on the AF (EL9, x86_64). Lock with:
+#   uv pip compile requirements.in --python-version 3.12 --python-platform x86_64-manylinux_2_28 -o requirements.txt
+temporalio==1.34.0
+uproot

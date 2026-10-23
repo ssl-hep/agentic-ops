@@ -1,0 +1,57 @@
+# Question 2 from River: a pod in ai-ops submits one job to the AF schedd with an IDTOKEN.
+# Needs ConfigMaps phase0-condor-probe (the script) and phase0-condor-probe-env (AF_COLLECTOR,
+# AF_SCHEDD) and Secret phase0-condor-token (key: token); see phase0/README.md.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: phase0-condor-probe
+  namespace: ai-ops
+  labels: {app.kubernetes.io/name: phase0-condor-probe}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: phase0-condor-probe}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: probe
+          image: python:3.12-slim
+          workingDir: /work
+          # HTCondor refuses a token file that others can read: copy it somewhere private
+          command:
+            - sh
+            - -c
+            - >-
+              mkdir -m 700 /work/tokens && cp /tokens/token /work/tokens/ && chmod 600 /work/tokens/token &&
+              pip install --quiet --target /work/py htcondor &&
+              PYTHONPATH=/work/py python /probe/submit_probe.py
+          envFrom:
+            - configMapRef: {name: phase0-condor-probe-env}
+          env:
+            - {name: HOME, value: /work}
+            - {name: CONDOR_CONFIG, value: ONLY_ENV}
+            - {name: _condor_SEC_TOKEN_DIRECTORY, value: /work/tokens}
+            - {name: _condor_SEC_CLIENT_AUTHENTICATION_METHODS, value: IDTOKENS}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: probe, mountPath: /probe, readOnly: true}
+            - {name: token, mountPath: /tokens, readOnly: true}
+            - {name: work, mountPath: /work}
+      volumes:
+        - name: probe
+          configMap: {name: phase0-condor-probe}
+        - name: token
+          secret: {secretName: phase0-condor-token, defaultMode: 0440}
+        - name: work
+          emptyDir: {}

@@ -1,0 +1,103 @@
+# enable-template
+#
+# Phase 0 test server: all services in one process, SQLite, mTLS on the public frontend.
+# Rendered by the server with the TEMPORAL_* environment variables set in the Deployment or
+# compose file. Only the frontend binds to FRONTEND_BIND_IP; everything else stays on
+# localhost. The HTTP API is off (no httpPort).
+log:
+  stdout: true
+  level: {{ default "info" (env "LOG_LEVEL") }}
+
+persistence:
+  defaultStore: sqlite-default
+  visibilityStore: sqlite-visibility
+  numHistoryShards: 1
+  datastores:
+    sqlite-default:
+      sql:
+        pluginName: sqlite
+        databaseName: {{ default "/var/lib/temporal" (env "TEMPORAL_DATA_DIR") }}/temporal.db
+        connectAddr: localhost
+        connectProtocol: tcp
+        connectAttributes:
+          cache: private
+          setup: true
+          journal_mode: wal
+          synchronous: 2
+        maxConns: 1
+        maxIdleConns: 1
+        maxConnLifetime: 1h
+    sqlite-visibility:
+      sql:
+        pluginName: sqlite
+        databaseName: {{ default "/var/lib/temporal" (env "TEMPORAL_DATA_DIR") }}/visibility.db
+        connectAddr: localhost
+        connectProtocol: tcp
+        connectAttributes:
+          cache: private
+          setup: true
+          journal_mode: wal
+          synchronous: 2
+        maxConns: 1
+        maxIdleConns: 1
+        maxConnLifetime: 1h
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: 127.0.0.1
+  tls:
+    frontend:
+      server:
+        requireClientAuth: true
+        certFile: {{ env "TEMPORAL_TLS_DIR" }}/server.pem
+        keyFile: {{ env "TEMPORAL_TLS_DIR" }}/server-key.pem
+        clientCaFiles:
+          - {{ env "TEMPORAL_TLS_DIR" }}/ca.pem
+  metrics:
+    prometheus:
+      framework: tally
+      timerType: histogram
+      listenAddress: 0.0.0.0:9090
+
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnIP: {{ default "0.0.0.0" (env "FRONTEND_BIND_IP") }}
+  internal-frontend:
+    rpc:
+      grpcPort: 7236
+      membershipPort: 6936
+      bindOnLocalHost: true
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnLocalHost: true
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnLocalHost: true
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnLocalHost: true
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: active
+  currentClusterName: active
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: frontend
+      rpcAddress: localhost:7233
+
+dcRedirectionPolicy:
+  policy: noop
