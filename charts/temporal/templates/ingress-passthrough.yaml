@@ -1,0 +1,27 @@
+{{- if .Values.passthroughIngress.enabled }}
+## TLS passthrough: nginx routes on SNI and never terminates TLS, so the frontend still sees
+## the client certificate. Only works if the ingress controller runs with
+## --enable-ssl-passthrough; without it nginx serves its own certificate and every client
+## fails the handshake. host must be a SAN of the server certificate.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "temporal.fullname" . }}
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
+spec:
+  ingressClassName: {{ .Values.passthroughIngress.className }}
+  rules:
+    - host: {{ required "passthroughIngress.host is required" .Values.passthroughIngress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "temporal.fullname" . }}
+                port: {name: grpc}
+{{- end }}

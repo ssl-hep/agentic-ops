@@ -1,0 +1,13 @@
+apiVersion: v2
+name: temporal
+description: >-
+  Temporal server for agentic-ops: one process with the worker-only authorizer, PostgreSQL
+  from the groundhog2k chart, and an mTLS frontend on a LoadBalancer
+type: application
+version: 0.1.0
+appVersion: "1.32.1"
+dependencies:
+  - name: postgres
+    alias: postgres
+    version: "1.6.x"
+    repository: https://groundhog2k.github.io/helm-charts/

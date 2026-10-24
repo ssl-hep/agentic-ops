@@ -1,0 +1,25 @@
+{{- $fullname := include "temporal.fullname" . -}}
+{{- $address := include "temporal.endpointAddress" . -}}
+Temporal server {{ include "temporal.image" . }} in namespace {{ .Release.Namespace }}.
+
+Client endpoint (ConfigMap {{ $fullname }}-endpoint):
+  address:     {{ $address | default "NOT KNOWN YET (see below)" }}
+  server name: {{ .Values.endpoint.serverName }}
+  namespace:   {{ .Values.temporal.namespace }}
+{{- if and .Values.publicService.enabled (not .Values.endpoint.address) }}
+
+The LoadBalancer address:
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "temporal.publicServiceName" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+Fix it in the release so the ConfigMap always has it:
+  helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set endpoint.address=<ip>:{{ .Values.publicService.port }}
+{{- end }}
+
+The server certificate must carry "{{ .Values.endpoint.serverName }}" (and may carry the IP):
+TLS Secret "{{ .Values.tls.secretName }}": {{ if (lookup "v1" "Secret" .Release.Namespace .Values.tls.secretName) }}found{{ else }}NOT FOUND, the server cannot start (see "Certificates" in the README){{ end }}
+
+Schema setup runs as init containers on every start:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ $fullname }} -c schema-update-temporal
+
+Register the namespace with the admin certificate from your own machine (README, "Namespace").
+
+Database credentials are in Secret "{{ include "temporal.dbSecretName" . }}" (kept on uninstall).

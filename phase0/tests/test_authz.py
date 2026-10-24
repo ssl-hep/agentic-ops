@@ -2,6 +2,8 @@
 
     uv run pytest                       # local server from local/compose.yaml
     PHASE0_ADDRESS=host:443 PHASE0_SERVER_NAME=host uv run pytest   # River
+    PHASE0_ADDRESS=<LB IP>:7233 PHASE0_SERVER_NAME=<name> PHASE0_NAMESPACE=ewkit-production \
+        PHASE0_CERTS=secrets/temporal-certs uv run pytest           # phase 1 (charts/temporal)
 
 Certificates come from PHASE0_CERTS (default secrets/phase0-certs). The namespace must be
 registered first (python -m shim.admin). Each test opens its own connections: the SDK's

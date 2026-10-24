@@ -1,0 +1,16 @@
+## How clients reach the frontend. Pods that talk to Temporal (controller, ops-executor) load
+## it with envFrom, and the ops-executor copies it into the jobs it submits. The address may
+## be a bare IP for now: clients dial TEMPORAL_ADDRESS and verify the server certificate
+## against TEMPORAL_TLS_SERVER_NAME, so the two may differ.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "temporal.fullname" . }}-endpoint
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+data:
+  TEMPORAL_ADDRESS: {{ include "temporal.endpointAddress" . | quote }}
+  TEMPORAL_TLS_SERVER_NAME: {{ required "endpoint.serverName is required" .Values.endpoint.serverName | quote }}
+  TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
+  ## In-cluster address, which still needs the certificate check against the server name
+  TEMPORAL_INTERNAL_ADDRESS: {{ printf "%s.%s.svc:7233" (include "temporal.fullname" .) .Release.Namespace | quote }}

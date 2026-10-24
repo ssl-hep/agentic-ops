@@ -1,0 +1,98 @@
+# enable-template
+#
+# Production server: all services in one process, Postgres, mTLS on the public frontend.
+# Rendered by the server with the TEMPORAL_* environment variables set by charts/temporal.
+# Only the frontend binds to FRONTEND_BIND_IP; everything else stays on localhost, so this
+# config is for exactly one replica. The HTTP API is off (no httpPort).
+log:
+  stdout: true
+  level: {{ default "info" (env "LOG_LEVEL") }}
+
+persistence:
+  defaultStore: default
+  visibilityStore: visibility
+  # Fixed when the cluster is first created; changing it later needs a new database
+  numHistoryShards: {{ default "512" (env "TEMPORAL_NUM_HISTORY_SHARDS") }}
+  datastores:
+    default:
+      sql:
+        pluginName: postgres12_pgx
+        databaseName: {{ default "temporal" (env "TEMPORAL_DB_NAME") | quote }}
+        connectAddr: {{ printf "%s:%s" (env "TEMPORAL_DB_HOST") (default "5432" (env "TEMPORAL_DB_PORT")) | quote }}
+        connectProtocol: tcp
+        user: {{ env "TEMPORAL_DB_USER" | quote }}
+        password: {{ env "TEMPORAL_DB_PASSWORD" | quote }}
+        maxConns: {{ default "20" (env "TEMPORAL_DB_MAX_CONNS") }}
+        maxIdleConns: {{ default "20" (env "TEMPORAL_DB_MAX_CONNS") }}
+        maxConnLifetime: 1h
+    visibility:
+      sql:
+        pluginName: postgres12_pgx
+        databaseName: {{ default "temporal_visibility" (env "TEMPORAL_VISIBILITY_DB_NAME") | quote }}
+        connectAddr: {{ printf "%s:%s" (env "TEMPORAL_DB_HOST") (default "5432" (env "TEMPORAL_DB_PORT")) | quote }}
+        connectProtocol: tcp
+        user: {{ env "TEMPORAL_DB_USER" | quote }}
+        password: {{ env "TEMPORAL_DB_PASSWORD" | quote }}
+        maxConns: 10
+        maxIdleConns: 10
+        maxConnLifetime: 1h
+
+global:
+  membership:
+    maxJoinDuration: 30s
+    broadcastAddress: 127.0.0.1
+  tls:
+    frontend:
+      server:
+        requireClientAuth: true
+        certFile: {{ env "TEMPORAL_TLS_DIR" }}/server.pem
+        keyFile: {{ env "TEMPORAL_TLS_DIR" }}/server-key.pem
+        clientCaFiles:
+          - {{ env "TEMPORAL_TLS_DIR" }}/ca.pem
+  metrics:
+    prometheus:
+      framework: tally
+      timerType: histogram
+      listenAddress: 0.0.0.0:9090
+
+services:
+  frontend:
+    rpc:
+      grpcPort: 7233
+      membershipPort: 6933
+      bindOnIP: {{ default "0.0.0.0" (env "FRONTEND_BIND_IP") }}
+  internal-frontend:
+    rpc:
+      grpcPort: 7236
+      membershipPort: 6936
+      bindOnLocalHost: true
+  matching:
+    rpc:
+      grpcPort: 7235
+      membershipPort: 6935
+      bindOnLocalHost: true
+  history:
+    rpc:
+      grpcPort: 7234
+      membershipPort: 6934
+      bindOnLocalHost: true
+  worker:
+    rpc:
+      grpcPort: 7239
+      membershipPort: 6939
+      bindOnLocalHost: true
+
+clusterMetadata:
+  enableGlobalNamespace: false
+  failoverVersionIncrement: 10
+  masterClusterName: active
+  currentClusterName: active
+  clusterInformation:
+    active:
+      enabled: true
+      initialFailoverVersion: 1
+      rpcName: frontend
+      rpcAddress: localhost:7233
+
+dcRedirectionPolicy:
+  policy: noop

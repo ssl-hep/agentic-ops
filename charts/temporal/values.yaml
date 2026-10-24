@@ -1,0 +1,123 @@
+## Server image: built from temporal-server/ by .github/workflows/temporal-server-image.yml
+## and tagged with the branch name, so the tag moves: pull on every start.
+image:
+  repository: ghcr.io/ssl-hep/agentic-ops-temporal-server
+  tag: temporal
+  pullPolicy: Always
+
+imagePullSecrets: []
+
+temporal:
+  ## The only namespace controller and worker certificates are scoped to. Registered with
+  ## the admin certificate from the operator's machine (see the README), not by the chart.
+  namespace: ewkit-production
+  ## Fixed when the cluster is first created
+  numHistoryShards: 512
+  dbMaxConns: 20
+  logLevel: info
+
+## Secret with server.pem, server-key.pem and ca.pem (phase0/certs/mkcerts.sh, server/).
+## Not part of the chart; see the README.
+tls:
+  secretName: temporal-tls
+
+## How clients reach the frontend, published in the <fullname>-endpoint ConfigMap.
+## Until there is a DNS record for the load balancer or SSL passthrough on the ingress,
+## clients dial the LoadBalancer IP and verify the certificate against serverName.
+endpoint:
+  ## host:port clients dial. Empty: the passthrough ingress host on 443 if enabled, else the
+  ## public Service's LoadBalancer address (known from the second install/upgrade on; or set
+  ## it here, e.g. 192.170.236.182:7233). Later, the DNS name.
+  address: ""
+  ## Name clients verify the server certificate against. Must be a SAN of the server
+  ## certificate (mkcerts.sh -n); with passthrough it must also be the ingress host.
+  serverName: temporal.servicex.ssl-hep.org
+
+## LoadBalancer for the frontend (gRPC with mTLS, port 7233)
+publicService:
+  enabled: true
+  port: 7233
+  ## Ask for a specific address so it survives reinstalls, if the load balancer honours it
+  loadBalancerIP: ""
+  annotations: {}
+  loadBalancerSourceRanges: []
+
+## Ingress with TLS passthrough, for when River's nginx runs with --enable-ssl-passthrough.
+## Can run alongside the LoadBalancer while clients move over.
+passthroughIngress:
+  enabled: false
+  className: nginx
+  host: ""
+
+## Temporal's databases. The chart renders a Secret (named by postgres.settings.existingSecret)
+## with these credentials; Postgres, the server and the backup job all read it.
+database:
+  ## Created by the postgres subchart (userDatabase)
+  name: temporal
+  ## Created on Postgres' first start by the customScripts entry below
+  visibilityName: temporal_visibility
+  user: temporal
+  ## Leave empty to auto-generate. Generated passwords are preserved on upgrade.
+  password: ""
+  ## Superuser (postgres) password. Leave empty to auto-generate.
+  superuserPassword: ""
+
+resources:
+  requests: {cpu: 500m, memory: 1Gi}
+  limits: {memory: 4Gi}
+
+schemaResources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+## Daily pg_dump of both databases into a PVC
+backup:
+  enabled: true
+  schedule: "17 3 * * *"
+  keepDays: 7
+  size: 20Gi
+  storageClass: rook-ceph-block
+  ## Empty: the postgres subchart's own image, so pg_dump matches the server
+  image: ""
+
+## groundhog2k/postgres subchart (official docker.io/postgres image, no bitnami)
+## https://github.com/groundhog2k/helm-charts/tree/master/charts/postgres
+postgres:
+  settings:
+    existingSecret: temporal-db-credentials
+    superuserPassword:
+      secretKey: POSTGRES_PASSWORD
+  userDatabase:
+    existingSecret: temporal-db-credentials
+    name:
+      secretKey: DB_NAME
+    user:
+      secretKey: DB_USER
+    password:
+      secretKey: DB_PASSWORD
+  ## Gives the init script below VISIBILITY_DB_NAME
+  extraEnvSecrets:
+    - temporal-db-credentials
+  ## Runs once, on an empty data directory, after the chart's 01-init-userdb.sh has created
+  ## the user and the temporal database
+  customScripts:
+    02-temporal-visibility.sh: |
+      #!/bin/sh
+      set -e
+      psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER:-postgres}" --dbname postgres \
+        -v db="$VISIBILITY_DB_NAME" -v owner="$USERDB_USER" <<'EOSQL'
+        CREATE DATABASE :"db" OWNER :"owner";
+      EOSQL
+  storage:
+    requestedSize: 10Gi
+    className: rook-ceph-block
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 2Gi}

@@ -3,16 +3,21 @@
 #
 #   condor_submit noop.sub ADDRESS=<host>:443 SERVER_NAME=<host> DIGEST=<sha256 of the tarball>
 #
+# Against the phase 1 server, ADDRESS is the LoadBalancer IP and port, and add
+# NAMESPACE=ewkit-production (the worker environment must include the shim that reads it).
+#
 # CERTS is a copy of clients/ewkit-phase0 from mkcerts.sh in a 0700 directory you own. Phase 0
 # sends it by file transfer; the plan's design hands it over with HTCondor's credential
 # handling instead.
 TARBALL = /data/$ENV(USER)/agentic-ops/builds/phase0/worker-env.tar.gz
 CERTS = $ENV(HOME)/phase0-certs/ewkit-phase0
 QUEUE_NAME = ewkit-phase0-default
+NAMESPACE = phase0
 
 universe = vanilla
 executable = bootstrap.sh
 arguments = "$(TARBALL) $(DIGEST) shim.noop_worker --address $(ADDRESS) --server-name $(SERVER_NAME) --certs ewkit-phase0 --queue $(QUEUE_NAME) --idle-timeout 3600"
+environment = "PHASE0_NAMESPACE=$(NAMESPACE)"
 transfer_input_files = $(CERTS)
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT

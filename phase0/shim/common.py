@@ -11,7 +11,8 @@ from pathlib import Path
 from temporalio.client import Client
 from temporalio.service import TLSConfig
 
-NAMESPACE = "phase0"
+# PHASE0_NAMESPACE=ewkit-production runs the same tests and jobs against the phase 1 server
+NAMESPACE = os.environ.get("PHASE0_NAMESPACE", "phase0")
 CONTROLLER_QUEUE = "controller"
 # Unit workers of production "phase0" poll ewkit-phase0-<memclass>; see temporal-server/authz.
 UNIT_QUEUE = "ewkit-phase0-default"

@@ -1,0 +1,27 @@
+{{- if .Values.publicService.enabled }}
+## The public frontend for AF jobs. Nothing may terminate TLS in front of it: the authorizer
+## maps the client certificate. Only gRPC is exposed, never metrics.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "temporal.publicServiceName" . }}
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+  {{- with .Values.publicService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  {{- with .Values.publicService.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.publicService.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "temporal.selectorLabels" (dict "ctx" $ "component" "server") | nindent 4 }}
+  ports:
+    - {name: grpc, port: {{ .Values.publicService.port }}, targetPort: grpc}
+{{- end }}

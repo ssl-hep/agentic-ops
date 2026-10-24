@@ -1,0 +1,82 @@
+{{- if .Values.backup.enabled }}
+{{- $secret := include "temporal.dbSecretName" . }}
+## pg_dump of both Temporal databases into a PVC, pruned after keepDays. Restore: README.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "temporal.fullname" . }}-backup
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.backup.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.size }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "temporal.fullname" . }}-backup
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "temporal.selectorLabels" (dict "ctx" $ "component" "backup") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            ## The postgres user of the official image
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: backup
+              image: {{ include "temporal.backupImage" . | quote }}
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+                  for db in "$DB_NAME" "$VISIBILITY_DB_NAME"; do
+                    pg_dump -Fc -d "$db" -f "/backup/$db-$stamp.dump.partial"
+                    mv "/backup/$db-$stamp.dump.partial" "/backup/$db-$stamp.dump"
+                    echo "wrote /backup/$db-$stamp.dump ($(du -h "/backup/$db-$stamp.dump" | cut -f1))"
+                  done
+                  find /backup -name '*.dump' -mtime +"$KEEP_DAYS" -print -delete
+                  find /backup -name '*.partial' -mmin +60 -print -delete
+              env:
+                {{- range $env, $key := dict "PGHOST" "DB_HOST" "PGPORT" "DB_PORT" "PGUSER" "DB_USER" "PGPASSWORD" "DB_PASSWORD" "DB_NAME" "DB_NAME" "VISIBILITY_DB_NAME" "VISIBILITY_DB_NAME" }}
+                - name: {{ $env }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $secret }}
+                      key: {{ $key }}
+                {{- end }}
+                - name: KEEP_DAYS
+                  value: {{ .Values.backup.keepDays | quote }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+              volumeMounts:
+                - {name: backup, mountPath: /backup}
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: {{ include "temporal.fullname" . }}-backup
+{{- end }}

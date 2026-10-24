@@ -8,6 +8,9 @@ sizing); phase 1 planned. Phase 0 is done except the checks that need the robot 
 Revised 2026-10-23: development runs with no robot, as Ben's personal identity, with data under
 `/data/bengal1/agentic-ops`; see [Development scope](#development-scope). Users run the TUI on
 an AF login node, and productions use the user's own EWKit clone and build.
+Revised 2026-10-23: phase 1 deployment decided and built: our own chart (`charts/temporal`),
+one server process, groundhog2k Postgres, the LoadBalancer IP as the endpoint until there is a
+DNS record or passthrough, and the server image built by CI for every branch.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -525,16 +528,23 @@ The server is reachable from the internet, so:
 - River, in namespace `ai-ops` where phase 0 ran, unless the River admins give agentic-ops its
   own. Our account there cannot list cluster-wide resources or read the ingress controller's
   settings; LoadBalancer Services get addresses, and `rook-ceph-block` volumes are available.
-- Temporal server from our own image: stock Temporal 1.32 built with the claim mapper and
-  authorizer from `temporal-server/authz` and the Postgres plugin. It replaces phase 0's
-  one-process SQLite server. Run under the `temporalio/helm-charts` chart if the image fits the
-  chart's per-service command line and config template, otherwise with our own manifests
-  (decided at the start of phase 1). Postgres databases `temporal` and `temporal_visibility`
-  (SQL advanced visibility, so custom search attributes work). Postgres from the existing
-  chart or an operator such as CloudNativePG, with scheduled backups. The agentic-ops schema
-  lives on the same server.
+- Temporal server from our own image (`temporal-server/cmd/temporal-server`): stock Temporal
+  1.32 built with the claim mapper and authorizer from `temporal-server/authz` and the Postgres
+  plugin, plus `temporal-sql-tool` from the same module for schema setup. It replaces phase 0's
+  one-process SQLite server. **Decided in phase 1:** our own chart, `charts/temporal`, running
+  every service in one pod (the `temporalio/helm-charts` chart assumes the stock image's
+  per-service command line); splitting services can wait for phase 6. The image is built and
+  pushed to `ghcr.io/ssl-hep/agentic-ops-temporal-server:<branch>` on every push. Postgres
+  databases `temporal` and `temporal_visibility` (SQL advanced visibility, so custom search
+  attributes work), from the groundhog2k `postgres` subchart (official image; no bitnami
+  charts or images), with a daily `pg_dump` CronJob. The agentic-ops schema lives on the same
+  server.
 - The frontend is published by a LoadBalancer Service on port 7233 with its own DNS record
-  (see [Credentials and security](#credentials-and-security)). The wildcard
+  (see [Credentials and security](#credentials-and-security)). Until the record exists (or
+  passthrough is enabled), clients dial the LoadBalancer IP and verify the certificate against
+  the planned name: the chart publishes both, separately, in the `temporal-endpoint` ConfigMap
+  (`TEMPORAL_ADDRESS`, `TEMPORAL_TLS_SERVER_NAME`, `TEMPORAL_NAMESPACE`), and every client and
+  job takes them as separate settings, so the switch is a values change. The wildcard
   `*.servicex.ssl-hep.org` points at the ingress, so the record must be specific to the load
   balancer's address. gRPC health checks need a client certificate, so probes check the socket.
 - Temporal namespace `ewkit-production`, retention long enough to cover a production plus
@@ -599,20 +609,22 @@ EWKit code yet.
 Work:
 
 1. **Server image.** Build Temporal 1.32 with `temporal-server/authz` and the Postgres plugin.
-   First decide between the Helm chart with this image and our own manifests (see
+   *Built:* `temporal-server/cmd/temporal-server`, image from CI; own chart (see
    [Deployment](#deployment)).
 2. **Postgres.** Databases `temporal` and `temporal_visibility` with their schemas, on
-   `rook-ceph-block`; scheduled backups.
+   `rook-ceph-block`; scheduled backups. *Built:* `charts/temporal`.
 3. **Public endpoint.** LoadBalancer Service on 7233 and a DNS record for its address from the
    River admins, or SSL passthrough on the ingress if they prefer that. The server certificate
-   carries that name. HTTP API off.
+   carries that name. HTTP API off. *Until then:* the LoadBalancer IP, with the name and the
+   address configured separately (`charts/temporal/README.md`).
 4. **CA and certificates.** Root CA kept offline; server, `admin`, `controller` and `reader`
    certificates; a worker-only intermediate CA for the ops-executor; a small tool to sign
    worker certificates (about 30 hours). Changes to `authz`: the `reader` role, and roles
    checked against the issuing CA (worker only from the intermediate). Go tests and
    `test_authz.py` extended to cover them.
 5. **Namespace.** `ewkit-production`, 30-day retention, the search attributes from
-   [Workflows](#workflows).
+   [Workflows](#workflows). *Built:* `phase0/shim/admin.py --search-attributes`, run with the
+   admin certificate.
 6. **Web UI** behind oauth2-proxy with CERN SSO, on an internal address, using a `reader`
    certificate.
 7. **Metrics.** Server metrics (port 9090) scraped by whatever Prometheus River offers (to find

@@ -82,7 +82,7 @@ export HOST=temporal-phase0.<domain> IMAGE=<registry>/agentic-ops-temporal-phase
 2. Image for amd64, then the server and its ingress:
 
    ```bash
-   docker buildx build --platform linux/amd64 -t "$IMAGE" --push temporal-server
+   docker buildx build --platform linux/amd64 --target phase0 -t "$IMAGE" --push temporal-server
    ```
 
    ```bash

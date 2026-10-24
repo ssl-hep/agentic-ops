@@ -1,0 +1,14 @@
+## In-cluster access: controller pods, the Web UI and metrics scraping
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "temporal.fullname" . }}
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "temporal.selectorLabels" (dict "ctx" $ "component" "server") | nindent 4 }}
+  ports:
+    - {name: grpc, port: 7233, targetPort: grpc}
+    - {name: metrics, port: 9090, targetPort: metrics}
