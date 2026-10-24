@@ -1,7 +1,7 @@
 ## Server image: built from temporal-server/ by .github/workflows/temporal-server-image.yml
 ## and tagged with the branch name, so the tag moves: pull on every start.
 image:
-  repository: ghcr.io/ssl-hep/agentic-ops-temporal-server
+  repository: bengal1/agentic-ops-temporal-server
   tag: temporal
   pullPolicy: Always
 
@@ -28,7 +28,7 @@ endpoint:
   ## host:port clients dial. Empty: the passthrough ingress host on 443 if enabled, else the
   ## public Service's LoadBalancer address (known from the second install/upgrade on; or set
   ## it here, e.g. 192.170.236.182:7233). Later, the DNS name.
-  address: ""
+  address: "192.170.236.183:7233"
   ## Name clients verify the server certificate against. Must be a SAN of the server
   ## certificate (mkcerts.sh -n); with passthrough it must also be the ingress host.
   serverName: temporal.servicex.ssl-hep.org
@@ -38,7 +38,7 @@ publicService:
   enabled: true
   port: 7233
   ## Ask for a specific address so it survives reinstalls, if the load balancer honours it
-  loadBalancerIP: ""
+  loadBalancerIP: "192.170.236.183"
   annotations: {}
   loadBalancerSourceRanges: []
 

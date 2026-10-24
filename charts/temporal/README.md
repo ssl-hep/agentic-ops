@@ -22,7 +22,7 @@ What it deploys:
   what clients need. An Ingress with TLS passthrough is in the chart, off.
 - **Backups**: daily `pg_dump -Fc` of both databases into PVC `<release>-temporal-backup`.
 
-The image is `ghcr.io/ssl-hep/agentic-ops-temporal-server:<branch>`, built and pushed by
+The image is `bengal1/agentic-ops-temporal-server:<branch>` on Docker Hub, built and pushed by
 `.github/workflows/temporal-server-image.yml` on every push to any branch (`/` in a branch name
 becomes `-`). The chart follows the `temporal` branch by default and pulls on every start.
 

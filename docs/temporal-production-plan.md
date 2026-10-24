@@ -534,7 +534,7 @@ The server is reachable from the internet, so:
   one-process SQLite server. **Decided in phase 1:** our own chart, `charts/temporal`, running
   every service in one pod (the `temporalio/helm-charts` chart assumes the stock image's
   per-service command line); splitting services can wait for phase 6. The image is built and
-  pushed to `ghcr.io/ssl-hep/agentic-ops-temporal-server:<branch>` on every push. Postgres
+  pushed to Docker Hub as `bengal1/agentic-ops-temporal-server:<branch>` on every push. Postgres
   databases `temporal` and `temporal_visibility` (SQL advanced visibility, so custom search
   attributes work), from the groundhog2k `postgres` subchart (official image; no bitnami
   charts or images), with a daily `pg_dump` CronJob. The agentic-ops schema lives on the same
