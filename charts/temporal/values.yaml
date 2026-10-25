@@ -16,8 +16,9 @@ temporal:
   dbMaxConns: 20
   logLevel: info
 
-## Secret with server.pem, server-key.pem and ca.pem (phase0/certs/mkcerts.sh, server/).
-## Not part of the chart; see the README.
+## Secret with server.pem, server-key.pem, ca.pem (the root, which client certificates must
+## chain to) and worker-ca.pem (the worker CAs, the only issuers of worker certificates): the
+## server/ directory from `agentic-ops-pki server`. Not part of the chart; see the README.
 tls:
   secretName: temporal-tls
 
@@ -30,7 +31,7 @@ endpoint:
   ## it here, e.g. 192.170.236.182:7233). Later, the DNS name.
   address: "192.170.236.183:7233"
   ## Name clients verify the server certificate against. Must be a SAN of the server
-  ## certificate (mkcerts.sh -n); with passthrough it must also be the ingress host.
+  ## certificate (agentic-ops-pki server -n); with passthrough it must also be the ingress host.
   serverName: temporal.servicex.ssl-hep.org
 
 ## LoadBalancer for the frontend (gRPC with mTLS, port 7233)

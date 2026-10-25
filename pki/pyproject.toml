@@ -1,0 +1,26 @@
+[project]
+name = "agentic-ops-pki"
+version = "0.1.0"
+description = "Certificates for the agentic-ops Temporal server: root, worker CA, server and clients"
+requires-python = ">=3.11"
+dependencies = [
+    "cryptography>=44",
+]
+
+[project.scripts]
+agentic-ops-pki = "agentic_ops_pki.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120

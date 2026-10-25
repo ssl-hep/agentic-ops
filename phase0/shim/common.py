@@ -1,7 +1,8 @@
-"""Connecting to the phase 0 server with one of the certificates from certs/mkcerts.sh.
+"""Connecting to the server with one of the certificates from agentic-ops-pki (pki/).
 
-A certificate directory holds cert.pem, key.pem and ca.pem (clients/<name>/ in the
-mkcerts output). The same layout is what an HTCondor job receives.
+A certificate directory holds cert.pem (worker certificates: followed by the worker CA),
+key.pem and ca.pem (clients/<name>/ in the pki output). The same layout is what an HTCondor
+job receives.
 """
 
 import argparse
@@ -67,6 +68,6 @@ def server_name(args: argparse.Namespace) -> str:
 
 
 def certs_root() -> Path:
-    """The mkcerts output directory: PHASE0_CERTS, or secrets/phase0-certs in this repo."""
+    """The pki output directory: PHASE0_CERTS, or secrets/phase0-certs in this repo."""
     default = Path(__file__).resolve().parents[2] / "secrets" / "phase0-certs"
     return Path(os.environ.get("PHASE0_CERTS", default))

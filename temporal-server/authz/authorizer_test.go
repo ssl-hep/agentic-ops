@@ -2,7 +2,6 @@ package authz
 
 import (
 	"context"
-	"crypto/x509/pkix"
 	"testing"
 
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -14,19 +13,6 @@ import (
 )
 
 const ns = "phase0"
-
-func subject(role, cn string) *pkix.Name {
-	return &pkix.Name{Organization: []string{Organization}, OrganizationalUnit: []string{role}, CommonName: cn}
-}
-
-func mustClaims(t *testing.T, s *pkix.Name) *authorization.Claims {
-	t.Helper()
-	claims, err := NewClaimMapper(ns).GetClaims(&authorization.AuthInfo{TLSSubject: s})
-	if err != nil {
-		t.Fatalf("GetClaims(%v): %v", s, err)
-	}
-	return claims
-}
 
 func token(t *testing.T, workflowID string) []byte {
 	t.Helper()
@@ -41,31 +27,13 @@ func poll(queue string) any {
 	return &workflowservice.PollActivityTaskQueueRequest{Namespace: ns, TaskQueue: &taskqueuepb.TaskQueue{Name: queue}}
 }
 
-func TestClaimMapperRejects(t *testing.T) {
-	m := NewClaimMapper(ns)
-	cases := map[string]*pkix.Name{
-		"no certificate":       nil,
-		"wrong organization":   {Organization: []string{"cern"}, OrganizationalUnit: []string{RoleAdmin}},
-		"two roles":            {Organization: []string{Organization}, OrganizationalUnit: []string{RoleWorker, RoleAdmin}},
-		"unknown role":         subject("operator", "x"),
-		"worker without scope": subject(RoleWorker, "someone"),
-		"production with dash": subject(RoleWorker, "ewkit-phase0-8g"),
-		"empty production":     subject(RoleWorker, "ewkit-"),
-	}
-	for name, s := range cases {
-		t.Run(name, func(t *testing.T) {
-			if _, err := m.GetClaims(&authorization.AuthInfo{TLSSubject: s}); err == nil {
-				t.Errorf("expected an error")
-			}
-		})
-	}
-}
-
 func TestAuthorize(t *testing.T) {
-	admin := mustClaims(t, subject(RoleAdmin, "ben"))
-	controller := mustClaims(t, subject(RoleController, "controller"))
-	unitWorker := mustClaims(t, subject(RoleWorker, "ewkit-phase0"))
-	afIo := mustClaims(t, subject(RoleWorker, AfIoName))
+	p := newTestPKI(t)
+	admin := p.claims(t, RoleAdmin, "ben")
+	controller := p.claims(t, RoleController, "controller")
+	reader := p.claims(t, RoleReader, "web-ui")
+	unitWorker := p.claims(t, RoleWorker, "ewkit-phase0")
+	afIo := p.claims(t, RoleWorker, AfIoName)
 
 	wf := func(method string) string { return api.WorkflowServicePrefix + method }
 	op := func(method string) string { return api.OperatorServicePrefix + method }
@@ -88,6 +56,17 @@ func TestAuthorize(t *testing.T) {
 		{"controller signals", controller, wf("SignalWorkflowExecution"), ns, nil, true},
 		{"controller in other namespace", controller, wf("StartWorkflowExecution"), "default", nil, false},
 		{"controller registers namespace", controller, wf("RegisterNamespace"), "", nil, false},
+
+		{"reader lists workflows", reader, wf("ListWorkflowExecutions"), ns, nil, true},
+		{"reader describes workflow", reader, wf("DescribeWorkflowExecution"), ns, nil, true},
+		{"reader reads history", reader, wf("GetWorkflowExecutionHistory"), ns, nil, true},
+		{"reader describes namespace", reader, wf("DescribeNamespace"), ns, nil, true},
+		{"reader starts workflow", reader, wf("StartWorkflowExecution"), ns, nil, false},
+		{"reader signals", reader, wf("SignalWorkflowExecution"), ns, nil, false},
+		{"reader terminates", reader, wf("TerminateWorkflowExecution"), ns, nil, false},
+		{"reader polls activity tasks", reader, wf("PollActivityTaskQueue"), ns, poll("ewkit-phase0-8g"), false},
+		{"reader in other namespace", reader, wf("ListWorkflowExecutions"), "default", nil, false},
+		{"reader adds search attributes", reader, op("AddSearchAttributes"), ns, nil, false},
 
 		{"worker system info", unitWorker, wf("GetSystemInfo"), "", nil, true},
 		{"worker describes namespace", unitWorker, wf("DescribeNamespace"), ns, nil, true},

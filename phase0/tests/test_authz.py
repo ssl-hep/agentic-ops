@@ -3,10 +3,10 @@
     uv run pytest                       # local server from local/compose.yaml
     PHASE0_ADDRESS=host:443 PHASE0_SERVER_NAME=host uv run pytest   # River
     PHASE0_ADDRESS=<LB IP>:7233 PHASE0_SERVER_NAME=<name> PHASE0_NAMESPACE=ewkit-production \
-        PHASE0_CERTS=secrets/temporal-certs uv run pytest           # phase 1 (charts/temporal)
+        PHASE0_CERTS=secrets/temporal-pki/test uv run pytest        # phase 1 (charts/temporal)
 
-Certificates come from PHASE0_CERTS (default secrets/phase0-certs). The namespace must be
-registered first (python -m shim.admin). Each test opens its own connections: the SDK's
+Certificates come from PHASE0_CERTS (default secrets/phase0-certs), as written by
+`agentic-ops-pki dev` (pki/). The namespace must be registered first (python -m shim.admin). Each test opens its own connections: the SDK's
 clients belong to the event loop that made them.
 """
 
@@ -189,6 +189,42 @@ def test_worker_runs_the_noop_activity():
         assert report["heartbeats"] >= 1
 
     run(go())
+
+
+def test_reader_reads_but_cannot_change_workflows():
+    async def go():
+        controller = await client_for("controller")
+        reader = await client_for("reader")
+        workflow_id = await start_sleeping_workflow(controller)
+        handle = reader.get_workflow_handle(workflow_id)
+        try:
+            assert (await handle.describe()).id == workflow_id
+            await reader.count_workflows()
+            await reader.workflow_service.get_workflow_execution_history(
+                GetWorkflowExecutionHistoryRequest(namespace=NAMESPACE, execution=WorkflowExecution(workflow_id=workflow_id))
+            )
+            await assert_denied(reader.start_workflow("Sleeping", id=f"{workflow_id}-2", task_queue="x"))
+            await assert_denied(handle.signal("anything"))
+            await assert_denied(handle.cancel())
+            await assert_denied(handle.terminate("reader says so"))
+            await assert_denied(reader.workflow_service.poll_activity_task_queue(poll_activity(UNIT_QUEUE), timeout=SHORT))
+        finally:
+            await controller.get_workflow_handle(workflow_id).terminate("authz test")
+
+    run(go())
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "root-signed-worker",  # a worker subject, but not from the worker CA
+        "worker-ca-controller",  # what a leaked worker CA key could mint
+    ],
+)
+def test_roles_are_checked_against_the_issuing_ca(name):
+    """The handshake accepts these (they chain to the root); the claim mapper refuses every call."""
+    with pytest.raises(RuntimeError, match="(?i)PermissionDenied|unauthorized"):
+        run(client_for(name))
 
 
 @pytest.mark.parametrize("name, with_client_cert", [("controller", False), ("foreign", True)])

@@ -29,8 +29,8 @@ const (
 )
 
 // Authorizer applies WorkerScope to worker claims and Temporal's default authorizer to
-// everything else (admin, controller and the internal frontend's system claims). Denied
-// worker calls are logged, since a worker certificate trying something else is worth seeing.
+// everything else (admin, controller, reader and the internal frontend's system claims).
+// Every denial is logged with the certificate subject: Temporal itself logs none.
 type Authorizer struct {
 	fallback authorization.Authorizer
 	tokens   *tasktoken.Serializer
@@ -46,7 +46,14 @@ func NewAuthorizer(logger log.Logger) *Authorizer {
 func (a *Authorizer) Authorize(ctx context.Context, claims *authorization.Claims, target *authorization.CallTarget) (authorization.Result, error) {
 	scope, isWorker := workerScopeOf(claims)
 	if !isWorker {
-		return a.fallback.Authorize(ctx, claims, target)
+		result, err := a.fallback.Authorize(ctx, claims, target)
+		if err == nil && result.Decision != authorization.DecisionAllow {
+			a.logger.Warn("Denied call",
+				tag.NewStringTag("subject", subjectOf(claims)),
+				tag.NewStringTag("api", target.APIName),
+				tag.WorkflowNamespace(target.Namespace))
+		}
+		return result, err
 	}
 	if authorization.IsHealthCheckAPI(target.APIName) {
 		return allow(claims), nil
@@ -60,6 +67,13 @@ func (a *Authorizer) Authorize(ctx context.Context, claims *authorization.Claims
 		return authorization.Result{Decision: authorization.DecisionDeny, Reason: reason}, nil
 	}
 	return allow(claims), nil
+}
+
+func subjectOf(claims *authorization.Claims) string {
+	if claims == nil {
+		return ""
+	}
+	return claims.Subject
 }
 
 func workerScopeOf(claims *authorization.Claims) (*WorkerScope, bool) {

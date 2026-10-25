@@ -61,7 +61,7 @@ spec:
         - name: temporal
           image: {{ include "temporal.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["--namespace", {{ .Values.temporal.namespace | quote }}]
+          args: ["--namespace", {{ .Values.temporal.namespace | quote }}, "--worker-ca", "/etc/temporal/tls/worker-ca.pem"]
           ports:
             - {name: grpc, containerPort: 7233}
             - {name: metrics, containerPort: 9090}
@@ -95,7 +95,8 @@ spec:
             - {name: tls, mountPath: /etc/temporal/tls, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        ## server.pem, server-key.pem and ca.pem, as written by phase0/certs/mkcerts.sh
+        ## server.pem, server-key.pem, ca.pem and worker-ca.pem, from agentic-ops-pki server.
+        ## Read at start: restart after changing the Secret.
         - name: tls
           secret:
             secretName: {{ .Values.tls.secretName }}

@@ -53,17 +53,49 @@ All commands from the repository root, namespace `ai-ops`.
 
 ### Certificates
 
-Same CA scheme as phase 0 (`phase0/certs/mkcerts.sh`). The server certificate must carry
-`endpoint.serverName`; add the LoadBalancer IP too (`-i`) so clients may also verify against
-the IP. If you do not know the IP yet, install first, then come back and re-run this with `-i`
-(the CA is kept, so client certificates stay valid).
+`agentic-ops-pki` ([pki/](../../pki/README.md)) keeps the CA in `secrets/temporal-pki`
+(gitignored): an offline root, a worker-only intermediate CA, the server certificate and the
+admin, controller and reader certificates. The commands that sign with the root ask for its
+passphrase (or read `AGENTIC_OPS_PKI_PASSPHRASE`). Once:
 
 ```bash
-phase0/certs/mkcerts.sh -o secrets/temporal-certs -n temporal.servicex.ssl-hep.org -i <LB IP>
+cd pki && uv run agentic-ops-pki root && uv run agentic-ops-pki worker-ca
+```
+
+The server certificate must carry `endpoint.serverName`; add the LoadBalancer IP too (`-i`) so
+clients may also verify against the IP. Re-run this whenever the worker CA is rotated: the
+server directory also holds the worker CAs the server trusts.
+
+```bash
+cd pki && uv run agentic-ops-pki server -n temporal.servicex.ssl-hep.org -i 192.170.236.183
 ```
 
 ```bash
-kubectl -n ai-ops create secret generic temporal-tls --from-file=secrets/temporal-certs/server/ --dry-run=client -o yaml | kubectl apply -f -
+cd pki && uv run agentic-ops-pki client --role admin --name admin && uv run agentic-ops-pki client --role controller --name controller && uv run agentic-ops-pki client --role reader --name web-ui
+```
+
+```bash
+kubectl -n ai-ops create secret generic temporal-tls --from-file=secrets/temporal-pki/server/ --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The server reads the Secret at start and refuses to start without `worker-ca.pem`, so update
+the Secret before the first start of an image with the issuer checks, and restart after every
+change (`kubectl -n ai-ops rollout restart deploy/temporal`). Afterwards move
+`secrets/temporal-pki/root/ca-key.pem` offline.
+
+The worker CA goes to the ops-executor (phase 3), which signs one worker certificate per
+submission, as Secret `temporal-worker-ca` (`ca.pem`, `ca-key.pem`, `root.pem`; the
+`retired/` subdirectory is left out):
+
+```bash
+kubectl -n ai-ops create secret generic temporal-worker-ca --from-file=secrets/temporal-pki/worker-ca/ --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Until there is an ops-executor, sign worker certificates by hand, e.g. for the AF no-op job
+(`phase0/jobs/noop.sub`, then copy the directory to `~/phase0-certs/ewkit-phase0` on the AF):
+
+```bash
+cd pki && uv run agentic-ops-pki worker --production phase0 --out ../secrets/temporal-pki/jobs/ewkit-phase0
 ```
 
 ### Chart
@@ -108,13 +140,28 @@ Registered with the admin certificate from the operator's machine; the admin cer
 goes into the cluster.
 
 ```bash
-cd phase0 && uv run python -m shim.admin --address <LB IP>:7233 --server-name temporal.servicex.ssl-hep.org --certs ../secrets/temporal-certs/clients/admin --namespace ewkit-production --retention-days 30 --description "EWKit ntuple production" --search-attributes
+cd phase0 && uv run python -m shim.admin --address <LB IP>:7233 --server-name temporal.servicex.ssl-hep.org --certs ../secrets/temporal-pki/clients/admin --namespace ewkit-production --retention-days 30 --description "EWKit ntuple production" --search-attributes
 ```
 
 ### Check the authorizer through the public endpoint
 
+`test_authz.py` needs a set of short-lived clients from this CA, including the ones that must be
+refused (a worker certificate signed by the root, a controller signed by the worker CA, and one
+from a foreign CA). They go in `secrets/temporal-pki/test`, apart from the real clients:
+
 ```bash
-cd phase0 && PHASE0_ADDRESS=<LB IP>:7233 PHASE0_SERVER_NAME=temporal.servicex.ssl-hep.org PHASE0_NAMESPACE=ewkit-production PHASE0_CERTS=../secrets/temporal-certs uv run pytest
+cd pki && uv run agentic-ops-pki test-clients
+```
+
+```bash
+cd phase0 && PHASE0_ADDRESS=<LB IP>:7233 PHASE0_SERVER_NAME=temporal.servicex.ssl-hep.org PHASE0_NAMESPACE=ewkit-production PHASE0_CERTS=../secrets/temporal-pki/test uv run pytest
+```
+
+Every denial is in the server log with the certificate subject: `Denied worker call` and
+`Denied call` from the authorizer, `Authorization error` for a certificate from the wrong CA.
+
+```bash
+kubectl -n ai-ops logs deploy/temporal -c temporal | grep -E 'Denied|Authorization error'
 ```
 
 ## Backups

@@ -6,9 +6,10 @@
 # Against the phase 1 server, ADDRESS is the LoadBalancer IP and port, and add
 # NAMESPACE=ewkit-production (the worker environment must include the shim that reads it).
 #
-# CERTS is a copy of clients/ewkit-phase0 from mkcerts.sh in a 0700 directory you own. Phase 0
-# sends it by file transfer; the plan's design hands it over with HTCondor's credential
-# handling instead.
+# CERTS is a worker certificate directory for production phase0, signed by the worker CA
+# (`agentic-ops-pki worker --production phase0`, or clients/ewkit-phase0 from `dev`), in a 0700
+# directory you own. Phase 0 sends it by file transfer; the plan's design hands it over with
+# HTCondor's credential handling instead.
 TARBALL = /data/$ENV(USER)/agentic-ops/builds/phase0/worker-env.tar.gz
 CERTS = $ENV(HOME)/phase0-certs/ewkit-phase0
 QUEUE_NAME = ewkit-phase0-default

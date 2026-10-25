@@ -11,6 +11,8 @@ an AF login node, and productions use the user's own EWKit clone and build.
 Revised 2026-10-23: phase 1 deployment decided and built: our own chart (`charts/temporal`),
 one server process, groundhog2k Postgres, the LoadBalancer IP as the endpoint until there is a
 DNS record or passthrough, and the server image built by CI for every branch.
+Revised 2026-10-24: phase 1 certificates built: `pki/` (`agentic-ops-pki`) for the root, the
+worker CA and every certificate, the `reader` role, and roles checked against the issuing CA.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -495,8 +497,10 @@ The server is reachable from the internet, so:
   worker-only intermediate CA, valid for a worker's 24 hours plus its last unit (about 30
   hours), and spools it with the job. It lives in the job's scratch directory, mode 0600,
   never on `/data` or another shared filesystem. The claim mapper accepts the `worker` role
-  only from that intermediate and the other roles never from it, so a leaked intermediate key
-  cannot mint a controller or admin.
+  only from that intermediate and the other roles only from a certificate the root signed
+  directly, so a leaked intermediate key cannot mint a controller or admin; the intermediate's
+  extended key usage is `clientAuth` only, so it cannot mint a server certificate either.
+  Built in phase 1: [pki/README.md](../pki/README.md).
 - **Authorization (settled in phase 0).** Open-source Temporal's default authorizer needs the
   same writer role to poll a queue as to start, signal or cancel a workflow. Our server build
   adds a claim mapper and authorizer (`temporal-server/authz`): `admin` and `controller` go to
@@ -563,6 +567,8 @@ agentic-ops:
 
 - `temporal-server/`: the Go module with the claim mapper and authorizer (from phase 0) and
   the production server command and image.
+- `pki/`: `agentic-ops-pki`, the certificate tool, and the `WorkerSigner` the ops-executor
+  imports to sign worker certificates.
 - `worker/`: a new Python package with workflows, controller activities, ops activities and
   triage activities. Separate entry points per task queue.
 - `backend/`: selections move from the in-memory `SelectionStore` to Postgres; new approval and
@@ -621,7 +627,11 @@ Work:
    certificates; a worker-only intermediate CA for the ops-executor; a small tool to sign
    worker certificates (about 30 hours). Changes to `authz`: the `reader` role, and roles
    checked against the issuing CA (worker only from the intermediate). Go tests and
-   `test_authz.py` extended to cover them.
+   `test_authz.py` extended to cover them. *Built:* `pki/` (`agentic-ops-pki`; the server
+   trusts the worker CAs listed in `worker-ca.pem` from the TLS Secret); every denial is now
+   logged with the certificate subject. Passes locally. *Still to do:* issue the production CA,
+   update the `temporal-tls` Secret and run `test_authz.py` against River, through the
+   LoadBalancer IP until the DNS name exists.
 5. **Namespace.** `ewkit-production`, 30-day retention, the search attributes from
    [Workflows](#workflows). *Built:* `phase0/shim/admin.py --search-attributes`, run with the
    admin certificate.

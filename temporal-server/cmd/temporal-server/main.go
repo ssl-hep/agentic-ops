@@ -18,8 +18,14 @@ import (
 
 func main() {
 	configFile := flag.String("config-file", "/etc/temporal/config.yaml", "server config file")
-	namespace := flag.String("namespace", "ewkit-production", "the namespace that controller and worker certificates are scoped to")
+	namespace := flag.String("namespace", "ewkit-production", "the namespace that controller, reader and worker certificates are scoped to")
+	workerCAFile := flag.String("worker-ca", "/etc/temporal/tls/worker-ca.pem", "the intermediate CAs that may sign worker certificates (PEM)")
 	flag.Parse()
+
+	workerCAs, err := authz.LoadCertificates(*workerCAFile)
+	if err != nil {
+		stdlog.Fatalf("loading worker CAs: %v", err)
+	}
 
 	cfg, err := config.Load(config.WithConfigFile(*configFile))
 	if err != nil {
@@ -34,7 +40,7 @@ func main() {
 		temporal.InterruptOn(temporal.InterruptCh()),
 		temporal.WithAuthorizer(authz.NewAuthorizer(logger)),
 		temporal.WithClaimMapper(func(*config.Config) authorization.ClaimMapper {
-			return authz.NewClaimMapper(*namespace)
+			return authz.NewClaimMapper(*namespace, workerCAs)
 		}),
 	)
 	if err != nil {

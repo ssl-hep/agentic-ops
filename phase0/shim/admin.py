@@ -2,7 +2,7 @@ r"""Register a namespace, and optionally the production search attributes, with 
 
     uv run python -m shim.admin [--address host:7233] [--retention-days 3]
     uv run python -m shim.admin --address <LB IP>:7233 --server-name <name> \
-        --certs secrets/temporal-certs/clients/admin \
+        --certs secrets/temporal-pki/clients/admin \
         --namespace ewkit-production --retention-days 30 --search-attributes   # phase 1
 """
 

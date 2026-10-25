@@ -7,7 +7,7 @@ Results go in [phase0-results.md](../docs/phase0-results.md).
 | Path | What |
 |---|---|
 | `../temporal-server/` | Go module: the claim mapper and authorizer (kept for phase 1), and a one-process test server |
-| `certs/mkcerts.sh` | CA, server certificate and client certificates, into `secrets/phase0-certs/` |
+| `../pki/` | `agentic-ops-pki dev`: CA, worker CA, server and client certificates, into `secrets/phase0-certs/` (phase 0 used `certs/mkcerts.sh`, since replaced) |
 | `local/compose.yaml` | The test server on this machine |
 | `deploy/` | The test server on River, namespace `ai-ops` |
 | `shim/` | Python: connection helper, namespace registration, `NoopWorkflow`, the no-op worker |
@@ -20,14 +20,16 @@ Certificates use `O=agentic-ops, OU=<role>, CN=<name>`. Roles: `admin`, `control
 `worker`. A worker certificate with `CN=ewkit-<production>` may poll only
 `ewkit-<production>-<memclass>` and use only task tokens of `production/<production>` and
 `dataset/<production>/...` workflows; `CN=af-io` may poll only `af-io`. Production IDs are
-`[a-z0-9]+`, so no production's queues match another's.
+`[a-z0-9]+`, so no production's queues match another's. Since phase 1 there is also `reader`,
+and worker certificates are accepted only from the worker CA, the other roles only from the
+root (see [pki/README.md](../pki/README.md)).
 
 ## Locally
 
 Needs Docker and uv. Go is not needed; it builds in Docker.
 
 ```bash
-phase0/certs/mkcerts.sh
+cd pki && uv run agentic-ops-pki --dir ../secrets/phase0-certs dev
 ```
 
 ```bash
@@ -72,7 +74,7 @@ export HOST=temporal-phase0.<domain> IMAGE=<registry>/agentic-ops-temporal-phase
    other manifests):
 
    ```bash
-   phase0/certs/mkcerts.sh -n "$HOST"
+   cd pki && uv run agentic-ops-pki --dir ../secrets/phase0-certs dev -n "$HOST"
    ```
 
    ```bash
