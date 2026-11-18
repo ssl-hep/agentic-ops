@@ -1,5 +1,7 @@
 # Question 5: condor_submit data_rw.sub [ROOT=/data/<you>/agentic-ops/phase0]
-ROOT = /data/$ENV(USER)/agentic-ops/phase0
+if ! defined ROOT
+  ROOT = /data/$ENV(USER)/agentic-ops/phase0
+endif
 universe = vanilla
 executable = data_rw.sh
 arguments = "$(ROOT) 100"

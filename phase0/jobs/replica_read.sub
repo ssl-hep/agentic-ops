@@ -2,8 +2,13 @@
 # PFNS comes from probes/rucio_replicas.py pfns. Needs a valid VOMS proxy
 # (voms-proxy-init -voms atlas); the job tries each PFN with and without it, directly and
 # through XCache.
-PFNS = pfns.txt
-XCACHE = root://xcache.af.uchicago.edu:1094
+# Defaults only: condor_submit reads NAME=value arguments before this file
+if ! defined PFNS
+  PFNS = pfns.txt
+endif
+if ! defined XCACHE
+  XCACHE = root://xcache.af.uchicago.edu:1094
+endif
 universe = vanilla
 executable = replica_read.sh
 arguments = "$Fnx(PFNS) $(XCACHE)"

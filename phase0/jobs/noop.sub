@@ -10,10 +10,21 @@
 # (`agentic-ops-pki worker --production phase0`, or clients/ewkit-phase0 from `dev`), in a 0700
 # directory you own. Phase 0 sends it by file transfer; the plan's design hands it over with
 # HTCondor's credential handling instead.
-TARBALL = /data/$ENV(USER)/agentic-ops/builds/phase0/worker-env.tar.gz
-CERTS = $ENV(HOME)/phase0-certs/ewkit-phase0
-QUEUE_NAME = ewkit-phase0-default
-NAMESPACE = phase0
+#
+# condor_submit reads NAME=value arguments before this file, so a plain assignment here would
+# override them: the defaults are set only when the name is not already defined.
+if ! defined TARBALL
+  TARBALL = /data/$ENV(USER)/agentic-ops/builds/phase0/worker-env.tar.gz
+endif
+if ! defined CERTS
+  CERTS = $ENV(HOME)/phase0-certs/ewkit-phase0
+endif
+if ! defined QUEUE_NAME
+  QUEUE_NAME = ewkit-phase0-default
+endif
+if ! defined NAMESPACE
+  NAMESPACE = phase0
+endif
 
 universe = vanilla
 executable = bootstrap.sh
