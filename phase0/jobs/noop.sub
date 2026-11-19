@@ -3,7 +3,7 @@
 #
 #   condor_submit noop.sub ADDRESS=<host>:443 SERVER_NAME=<host> DIGEST=<sha256 of the tarball>
 #
-# Against the phase 1 server, ADDRESS is the LoadBalancer IP and port, and add
+# Against the phase 1 server: ADDRESS=temporal.ndslabs.org:31644 SERVER_NAME=temporal.ndslabs.org
 # NAMESPACE=ewkit-production (the worker environment must include the shim that reads it).
 #
 # CERTS is a worker certificate directory for production phase0, signed by the worker CA

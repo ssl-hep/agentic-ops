@@ -23,16 +23,17 @@ tls:
   secretName: temporal-tls
 
 ## How clients reach the frontend, published in the <fullname>-endpoint ConfigMap.
-## Until there is a DNS record for the load balancer or SSL passthrough on the ingress,
-## clients dial the LoadBalancer IP and verify the certificate against serverName.
+## temporal.ndslabs.org is DNS only (no proxy: anything that terminates TLS in front of the
+## frontend breaks the authorizer). Since 2026-11-19 its A records are node IPs and clients
+## use publicService.nodePort, because the LoadBalancer address stopped answering; when River
+## fixes it, point the record back at publicService.loadBalancerIP and the address at :7233.
 endpoint:
   ## host:port clients dial. Empty: the passthrough ingress host on 443 if enabled, else the
-  ## public Service's LoadBalancer address (known from the second install/upgrade on; or set
-  ## it here, e.g. 192.170.236.182:7233). Later, the DNS name.
-  address: "192.170.236.183:7233"
+  ## public Service's LoadBalancer address (known from the second install/upgrade on).
+  address: "temporal.ndslabs.org:31644"
   ## Name clients verify the server certificate against. Must be a SAN of the server
   ## certificate (agentic-ops-pki server -n); with passthrough it must also be the ingress host.
-  serverName: temporal.servicex.ssl-hep.org
+  serverName: temporal.ndslabs.org
 
 ## LoadBalancer for the frontend (gRPC with mTLS, port 7233)
 publicService:
@@ -40,6 +41,9 @@ publicService:
   port: 7233
   ## Ask for a specific address so it survives reinstalls, if the load balancer honours it
   loadBalancerIP: "192.170.236.183"
+  ## Pinned so the node-IP endpoint survives reinstalls (must be in the cluster's NodePort
+  ## range, 30000-32767 by default). Empty: Kubernetes picks one.
+  nodePort: 31644
   annotations: {}
   loadBalancerSourceRanges: []
 

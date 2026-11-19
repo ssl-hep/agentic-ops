@@ -1,7 +1,7 @@
 ## How clients reach the frontend. Pods that talk to Temporal (controller, ops-executor) load
-## it with envFrom, and the ops-executor copies it into the jobs it submits. The address may
-## be a bare IP for now: clients dial TEMPORAL_ADDRESS and verify the server certificate
-## against TEMPORAL_TLS_SERVER_NAME, so the two may differ.
+## it with envFrom, and the ops-executor copies it into the jobs it submits. Clients dial
+## TEMPORAL_ADDRESS and verify the server certificate against TEMPORAL_TLS_SERVER_NAME; the
+## two are kept separate so the address may differ from the name (e.g. a bare IP).
 apiVersion: v1
 kind: ConfigMap
 metadata:

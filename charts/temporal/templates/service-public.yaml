@@ -23,5 +23,10 @@ spec:
   selector:
     {{- include "temporal.selectorLabels" (dict "ctx" $ "component" "server") | nindent 4 }}
   ports:
-    - {name: grpc, port: {{ .Values.publicService.port }}, targetPort: grpc}
+    - name: grpc
+      port: {{ .Values.publicService.port }}
+      targetPort: grpc
+      {{- with .Values.publicService.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
 {{- end }}

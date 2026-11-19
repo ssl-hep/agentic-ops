@@ -54,7 +54,7 @@ uv run agentic-ops-pki show ../secrets/temporal-pki/server ../secrets/temporal-p
 ### Rotating the worker CA
 
 ```bash
-uv run agentic-ops-pki worker-ca --rotate && uv run agentic-ops-pki server -n temporal.servicex.ssl-hep.org -i 192.170.236.183
+uv run agentic-ops-pki worker-ca --rotate && uv run agentic-ops-pki server -n temporal.ndslabs.org -i 192.170.236.183
 ```
 
 The old worker CA moves to `worker-ca/retired/` (its key is deleted) and stays in the server's

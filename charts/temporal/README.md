@@ -30,26 +30,37 @@ The image is `bengal1/agentic-ops-temporal-server:<branch>` on Docker Hub, built
 `.github/workflows/temporal-server-image.yml` on every push to any branch (`/` in a branch name
 becomes `-`). The chart follows the `temporal` branch by default and pulls on every start.
 
-## Endpoint: an IP for now
+## Endpoint: temporal.ndslabs.org:31644 (NodePort, for now)
 
-There is no DNS record for the load balancer yet, and River's ingress cannot pass TLS through,
-so clients dial the LoadBalancer **IP** and verify the server certificate against a **name**.
-The two are separate settings everywhere:
+The frontend is the LoadBalancer Service `temporal-public`: 192.170.236.183:7233 (pinned by
+`publicService.loadBalancerIP`), and NodePort 31644 on every node (pinned by
+`publicService.nodePort`). Since 2026-11-19 the LoadBalancer address times out from outside
+the cluster, whichever node MetalLB announces it from, while the NodePort works; that is with
+the River admins. Until it is fixed, `temporal.ndslabs.org` has A records for node IPs
+(`river-c031` 192.170.236.131, `river-c055` 192.170.236.155) and clients dial port 31644. Once
+the LoadBalancer answers again, point the record back at 192.170.236.183 and set
+`endpoint.address=temporal.ndslabs.org:7233`; no certificate change is needed either way,
+since clients check the name.
+
+Keep the record DNS only: a proxy in front (such as Cloudflare's) would terminate TLS and break
+the authorizer. River's ingress cannot pass TLS through, so the Service is the only way in. The
+address dialled and the name the certificate is checked against are separate settings
+everywhere, though today both use `temporal.ndslabs.org`:
 
 | Value | ConfigMap key | Client setting |
 |---|---|---|
-| `endpoint.address` (`<ip>:7233`) | `TEMPORAL_ADDRESS` | address dialled (`--address`, `PHASE0_ADDRESS`) |
+| `endpoint.address` (`<host>:<port>`) | `TEMPORAL_ADDRESS` | address dialled (`--address`, `PHASE0_ADDRESS`) |
 | `endpoint.serverName` | `TEMPORAL_TLS_SERVER_NAME` | TLS server name (`--server-name`, `PHASE0_SERVER_NAME`) |
 | `temporal.namespace` | `TEMPORAL_NAMESPACE` | namespace (`PHASE0_NAMESPACE`) |
 
 If `endpoint.address` is empty the chart fills `TEMPORAL_ADDRESS` from the Service's
-LoadBalancer status, which exists only after the first install, so set it explicitly once you
-know it. `publicService.loadBalancerIP` asks for a particular address, so a reinstall keeps it.
+LoadBalancer status, which exists only after the first install. `publicService.loadBalancerIP`
+asks for a particular address, so a reinstall keeps it; if the address ever changes, update the
+DNS record.
 
-Later, with a DNS record: put the name in `endpoint.address` (`<name>:7233`). With passthrough:
-`passthroughIngress.enabled=true`, `passthroughIngress.host=<name>`, and `endpoint.address`
-empty or `<name>:443`. In both cases rerun `phase0/tests/test_authz.py` through the new
-endpoint: anything that terminates TLS in front of the frontend breaks the authorizer.
+With passthrough, if River enables it: `passthroughIngress.enabled=true`,
+`passthroughIngress.host=<name>`, and `endpoint.address` empty or `<name>:443`. Whenever the
+endpoint changes, rerun `phase0/tests/test_authz.py` and the AF no-op job through it.
 
 ## Install
 
@@ -71,7 +82,7 @@ clients may also verify against the IP. Re-run this whenever the worker CA is ro
 server directory also holds the worker CAs the server trusts.
 
 ```bash
-cd pki && uv run agentic-ops-pki server -n temporal.servicex.ssl-hep.org -i 192.170.236.183
+cd pki && uv run agentic-ops-pki server -n temporal.ndslabs.org -i 192.170.236.183
 ```
 
 ```bash
@@ -112,14 +123,11 @@ helm dependency build charts/temporal
 helm upgrade --install temporal charts/temporal -n ai-ops
 ```
 
-Read the LoadBalancer address and record it in the release:
+On a new cluster, read the LoadBalancer address, point the DNS record at it, and set
+`publicService.loadBalancerIP` to it so a reinstall keeps it:
 
 ```bash
 kubectl -n ai-ops get svc temporal-public -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-```
-
-```bash
-helm upgrade temporal charts/temporal -n ai-ops --reset-then-reuse-values --set endpoint.address=<LB IP>:7233 --set publicService.loadBalancerIP=<LB IP>
 ```
 
 Check the schema steps and the server:
@@ -148,7 +156,7 @@ Registered with the admin certificate from the operator's machine; the admin cer
 goes into the cluster.
 
 ```bash
-cd phase0 && uv run python -m shim.admin --address <LB IP>:7233 --server-name temporal.servicex.ssl-hep.org --certs ../secrets/temporal-pki/clients/admin --namespace ewkit-production --retention-days 30 --description "EWKit ntuple production" --search-attributes
+cd phase0 && uv run python -m shim.admin --address temporal.ndslabs.org:31644 --certs ../secrets/temporal-pki/clients/admin --namespace ewkit-production --retention-days 30 --description "EWKit ntuple production" --search-attributes
 ```
 
 ### Check the authorizer through the public endpoint
@@ -162,7 +170,7 @@ cd pki && uv run agentic-ops-pki test-clients
 ```
 
 ```bash
-cd phase0 && PHASE0_ADDRESS=<LB IP>:7233 PHASE0_SERVER_NAME=temporal.servicex.ssl-hep.org PHASE0_NAMESPACE=ewkit-production PHASE0_CERTS=../secrets/temporal-pki/test uv run pytest
+cd phase0 && PHASE0_ADDRESS=temporal.ndslabs.org:31644 PHASE0_NAMESPACE=ewkit-production PHASE0_CERTS=../secrets/temporal-pki/test uv run pytest
 ```
 
 Every denial is in the server log with the certificate subject: `Denied worker call` and

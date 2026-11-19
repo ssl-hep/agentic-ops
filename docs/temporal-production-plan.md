@@ -16,6 +16,9 @@ worker CA and every certificate, the `reader` role, and roles checked against th
 Revised 2026-11-18: the phase 1 endpoint passed `test_authz.py` and the AF no-op job with the
 production CA. The Web UI uses basic auth at the ingress instead of CERN SSO, and readers may
 make the three cluster-scoped reads the UI needs. Metrics scraping is in the chart.
+Revised 2026-11-19: the endpoint is named `temporal.ndslabs.org`, in a domain we control; the
+server certificate carries that name. The LoadBalancer IP stopped answering from outside River
+the same day, so for now the name points at node IPs and clients use NodePort 31644.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -547,14 +550,16 @@ The server is reachable from the internet, so:
   attributes work), from the groundhog2k `postgres` subchart (official image; no bitnami
   charts or images), with a daily `pg_dump` CronJob. The agentic-ops schema lives on the same
   server.
-- The frontend is published by a LoadBalancer Service on port 7233 with its own DNS record
-  (see [Credentials and security](#credentials-and-security)). Until the record exists (or
-  passthrough is enabled), clients dial the LoadBalancer IP and verify the certificate against
-  the planned name: the chart publishes both, separately, in the `temporal-endpoint` ConfigMap
-  (`TEMPORAL_ADDRESS`, `TEMPORAL_TLS_SERVER_NAME`, `TEMPORAL_NAMESPACE`), and every client and
-  job takes them as separate settings, so the switch is a values change. The wildcard
-  `*.servicex.ssl-hep.org` points at the ingress, so the record must be specific to the load
-  balancer's address. gRPC health checks need a client certificate, so probes check the socket.
+- The frontend is published by a LoadBalancer Service on port 7233 as
+  `temporal.ndslabs.org:7233` (see [Credentials and security](#credentials-and-security)), an
+  A record for the LoadBalancer IP in a domain we control, DNS only (no proxy). While the
+  LoadBalancer IP is unreachable (since 2026-11-19, with the River admins), the record points
+  at node IPs and clients dial NodePort 31644, pinned in the chart. The wildcard
+  `*.servicex.ssl-hep.org` points at the ingress, which is why the record is in another domain.
+  The chart publishes the address and the TLS server name separately in the
+  `temporal-endpoint` ConfigMap (`TEMPORAL_ADDRESS`, `TEMPORAL_TLS_SERVER_NAME`,
+  `TEMPORAL_NAMESPACE`), and every client and job takes them as separate settings. gRPC health
+  checks need a client certificate, so probes check the socket.
 - Temporal namespace `ewkit-production`, retention long enough to cover a production plus
   review (30 days to start), with the search attributes above registered. The claim mapper
   scopes `controller`, `reader` and `worker` certificates to this one namespace.
@@ -623,10 +628,14 @@ Work:
    [Deployment](#deployment)).
 2. **Postgres.** Databases `temporal` and `temporal_visibility` with their schemas, on
    `rook-ceph-block`; scheduled backups. *Built:* `charts/temporal`.
-3. **Public endpoint.** LoadBalancer Service on 7233 and a DNS record for its address from the
-   River admins, or SSL passthrough on the ingress if they prefer that. The server certificate
-   carries that name. HTTP API off. *Until then:* the LoadBalancer IP, with the name and the
-   address configured separately (`charts/temporal/README.md`).
+3. **Public endpoint.** LoadBalancer Service on 7233 and a DNS record for its address. The
+   server certificate carries that name. HTTP API off. *Done 2026-11-19:*
+   `temporal.ndslabs.org`; server certificate reissued with it and loaded into `temporal-tls`;
+   `test_authz.py` and the AF no-op job pass through `temporal.ndslabs.org:31644`. The
+   LoadBalancer IP (192.170.236.183) stopped answering from outside River that day, whichever
+   node announces it, so the name points at node IPs and clients dial NodePort 31644. *Still to
+   do:* River admins fix the LoadBalancer address, then the record goes back to it (port 7233)
+   and both checks are repeated.
 4. **CA and certificates.** Root CA kept offline; server, `admin`, `controller` and `reader`
    certificates; a worker-only intermediate CA for the ops-executor; a small tool to sign
    worker certificates (about 30 hours). Changes to `authz`: the `reader` role, and roles
@@ -637,8 +646,8 @@ Work:
    issued and in the `temporal-tls` Secret; `test_authz.py` passes against River in
    `ewkit-production` through the LoadBalancer IP (192.170.236.183), and the AF no-op job
    completes with an `ewkit-phase0` certificate from the worker CA (see
-   [phase0-results.md](phase0-results.md), questions 1 and 8). *Still to do:* repeat both
-   through the DNS name once it exists, and move the root key offline.
+   [phase0-results.md](phase0-results.md), questions 1 and 8). *Done 2026-11-19:* both repeated
+   through `temporal.ndslabs.org:31644` (see task 3). *Still to do:* move the root key offline.
 5. **Namespace.** `ewkit-production`, 30-day retention, the search attributes from
    [Workflows](#workflows). *Built:* `phase0/shim/admin.py --search-attributes`, run with the
    admin certificate.
