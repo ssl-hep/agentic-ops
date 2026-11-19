@@ -76,6 +76,48 @@ containerSecurityContext:
   readOnlyRootFilesystem: true
   capabilities: {drop: [ALL]}
 
+## Prometheus scraping of the server's metrics (port 9090, path /metrics)
+metrics:
+  ## prometheus.io/scrape, port and path annotations on the server pod, for a Prometheus
+  ## that discovers pods by annotation
+  podAnnotations: true
+  ## A ServiceMonitor for the Prometheus Operator; needs its CRD in the cluster
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+## Temporal Web UI: reader certificate to the frontend, basic auth at the nginx ingress
+webUi:
+  enabled: true
+  image:
+    repository: temporalio/ui
+    ## 2.58.1 or later: older images' CSP ('strict-dynamic' with a hash) blocks the app's
+    ## own scripts in Chrome 158+, leaving a blank page (temporalio/ui#4125)
+    tag: 2.58.1
+    pullPolicy: IfNotPresent
+  ## ca.pem, cert.pem, key.pem: secrets/temporal-pki/clients/web-ui (a reader certificate)
+  tlsSecretName: temporal-web-ui-tls
+  ## Nodes (kubernetes.io/hostname) the UI must never run on
+  avoidNodes: []
+  ingress:
+    enabled: true
+    className: nginx
+    ## Under the *.servicex.ssl-hep.org wildcard, which points at the ingress
+    host: temporal-ui.servicex.ssl-hep.org
+    ## htpasswd file under the key "auth" (README, "Web UI")
+    basicAuthSecretName: temporal-ui-basic-auth
+    ## cert-manager ClusterIssuer that issues the certificate into tlsSecretName (River's
+    ## letsencrypt-prod, as for MLflow). Empty: bring your own Secret.
+    clusterIssuer: letsencrypt-prod
+    ## Secret with the ingress's certificate. Empty: no tls section, and nginx serves its
+    ## built-in fake certificate
+    tlsSecretName: temporal-ui-tls
+    annotations: {}
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+
 ## Daily pg_dump of both databases into a PVC
 backup:
   enabled: true

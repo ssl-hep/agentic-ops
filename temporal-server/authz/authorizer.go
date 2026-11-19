@@ -28,9 +28,21 @@ const (
 	recordWorkerStatus = "RecordWorkerHeartbeat"
 )
 
+// Cluster-scoped, read-only workflow service methods a reader may call on top of what its
+// namespace role allows. The default authorizer checks cluster-scoped methods against the
+// system role only, and readers have none (a system role would cover every namespace), yet
+// the Web UI calls these on every page. They reveal namespace names and settings, the cluster
+// and server versions and the search attribute names, nothing about workflows.
+var readerClusterReads = map[string]bool{
+	api.WorkflowServicePrefix + "GetClusterInfo":      true,
+	api.WorkflowServicePrefix + "ListNamespaces":      true,
+	api.WorkflowServicePrefix + "GetSearchAttributes": true,
+}
+
 // Authorizer applies WorkerScope to worker claims and Temporal's default authorizer to
-// everything else (admin, controller, reader and the internal frontend's system claims).
-// Every denial is logged with the certificate subject: Temporal itself logs none.
+// everything else (admin, controller, reader and the internal frontend's system claims),
+// plus readerClusterReads for readers. Every denial is logged with the certificate subject:
+// Temporal itself logs none.
 type Authorizer struct {
 	fallback authorization.Authorizer
 	tokens   *tasktoken.Serializer
@@ -47,6 +59,9 @@ func (a *Authorizer) Authorize(ctx context.Context, claims *authorization.Claims
 	scope, isWorker := workerScopeOf(claims)
 	if !isWorker {
 		result, err := a.fallback.Authorize(ctx, claims, target)
+		if err == nil && result.Decision != authorization.DecisionAllow && isReader(claims) && readerClusterReads[target.APIName] {
+			return allow(claims), nil
+		}
 		if err == nil && result.Decision != authorization.DecisionAllow {
 			a.logger.Warn("Denied call",
 				tag.NewStringTag("subject", subjectOf(claims)),
@@ -74,6 +89,20 @@ func subjectOf(claims *authorization.Claims) string {
 		return ""
 	}
 	return claims.Subject
+}
+
+// isReader reports whether the claims are a reader certificate's: no system role, and only
+// the reader role on namespaces.
+func isReader(claims *authorization.Claims) bool {
+	if claims == nil || claims.System != authorization.RoleUndefined || len(claims.Namespaces) == 0 {
+		return false
+	}
+	for _, role := range claims.Namespaces {
+		if role != authorization.RoleReader {
+			return false
+		}
+	}
+	return true
 }
 
 func workerScopeOf(claims *authorization.Claims) (*WorkerScope, bool) {

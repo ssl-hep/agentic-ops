@@ -78,6 +78,13 @@ CN=af-io         PollActivityTaskQueue               ... "ewkit-phase0-default"
 CN=ewkit-phase1  RespondActivityTaskCompleted        task token belongs to another production
 ```
 
+Phase 1 endpoint, 2026-11-18, Ben Galewsky with Claude Code: the production server
+(`charts/temporal`, Postgres) in namespace `ewkit-production`, certificates from the
+production CA (`agentic-ops-pki`, including the `reader` role and the issuer checks),
+through the LoadBalancer at 192.170.236.183. `test_authz.py` passed with the test clients
+from `agentic-ops-pki test-clients`. It still needs repeating through the DNS name once there
+is one.
+
 Residual risks, to carry into phase 1:
 
 - **Task tokens are not signed.** A unit worker's certificate is limited to tokens of its own
@@ -137,6 +144,13 @@ through the load balancer. AF worker nodes reach port 7233 outbound.**
   workflow was scheduled at 13:25:39 UTC, the job submitted at 13:26:10 and started at 13:42:35
   (16 min 25 s idle). That is far longer than any start in question 6, for a smaller job (1
   CPU, 2 GB). The cause is not known from this one job.
+
+Phase 1 endpoint, 2026-11-18, Ben Galewsky with Claude Code: `jobs/noop.sub` completed the
+no-op activity against the production server in `ewkit-production` through 192.170.236.183,
+with an `ewkit-phase0` certificate signed by the worker CA. The first try was denied because
+`noop.sub`'s own `NAMESPACE = phase0` overrode `NAMESPACE=ewkit-production` on the
+`condor_submit` command line (condor_submit reads command-line assignments before the submit
+file). The submit files now set each default only when the name is not already defined.
 
 ## 2. Submitting from a pod
 

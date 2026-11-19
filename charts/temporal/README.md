@@ -21,6 +21,10 @@ What it deploys:
   in-cluster Service with metrics on 9090, and ConfigMap `<release>-temporal-endpoint` with
   what clients need. An Ingress with TLS passthrough is in the chart, off.
 - **Backups**: daily `pg_dump -Fc` of both databases into PVC `<release>-temporal-backup`.
+- **Web UI** (optional): `temporalio/ui` with a `reader` certificate, behind the nginx ingress
+  with basic auth; see [Web UI](#web-ui).
+- **Metrics**: scrape annotations on the server pod and an optional ServiceMonitor; see
+  [Metrics](#metrics).
 
 The image is `bengal1/agentic-ops-temporal-server:<branch>` on Docker Hub, built and pushed by
 `.github/workflows/temporal-server-image.yml` on every push to any branch (`/` in a branch name
@@ -115,7 +119,7 @@ kubectl -n ai-ops get svc temporal-public -o jsonpath='{.status.loadBalancer.ing
 ```
 
 ```bash
-helm upgrade temporal charts/temporal -n ai-ops --reuse-values --set endpoint.address=<LB IP>:7233 --set publicService.loadBalancerIP=<LB IP>
+helm upgrade temporal charts/temporal -n ai-ops --reset-then-reuse-values --set endpoint.address=<LB IP>:7233 --set publicService.loadBalancerIP=<LB IP>
 ```
 
 Check the schema steps and the server:
@@ -127,6 +131,10 @@ kubectl -n ai-ops logs deploy/temporal -c schema-update-temporal
 ```bash
 kubectl -n ai-ops logs deploy/temporal -c temporal --tail=50
 ```
+
+Upgrade with `--reset-then-reuse-values`, not `--reuse-values`: the latter keeps only the
+values of the previous release, so keys a newer chart adds (such as `webUi.image`) are missing
+and the templates fail on them.
 
 After a new image is pushed, restart to pull it:
 
@@ -164,6 +172,80 @@ Every denial is in the server log with the certificate subject: `Denied worker c
 kubectl -n ai-ops logs deploy/temporal -c temporal | grep -E 'Denied|Authorization error'
 ```
 
+## Web UI
+
+Off by default (`webUi.enabled`). The `temporalio/ui` pod reaches the frontend over the
+in-cluster Service with the `reader` certificate: it can list and read workflows in
+`temporal.namespace` and nothing else. People reach it through the nginx ingress at
+`webUi.ingress.host` with **basic auth**. TLS ends at the ingress, which is fine here: the
+client certificate the authorizer needs is the UI's own, on the hop behind it.
+
+Readers also get three cluster-scoped reads the UI makes on every page (`GetClusterInfo`,
+`ListNamespaces`, `GetSearchAttributes`; `temporal-server/authz/authorizer.go`). Temporal's
+default authorizer allows those only to a system role, which would also cover every namespace.
+
+The reader certificate (issued in [Certificates](#certificates)) as a Secret:
+
+```bash
+kubectl -n ai-ops create secret generic temporal-web-ui-tls --from-file=secrets/temporal-pki/clients/web-ui/ --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The basic-auth users, as an htpasswd file under the key `auth` (`htpasswd` ships with macOS;
+`-B` for bcrypt, which ingress-nginx accepts). Add `-c` only for the first user:
+
+```bash
+htpasswd -B -c secrets/temporal-ui-htpasswd <user>
+```
+
+```bash
+kubectl -n ai-ops create secret generic temporal-ui-basic-auth --from-file=auth=secrets/temporal-ui-htpasswd --dry-run=client -o yaml | kubectl apply -f -
+```
+
+```bash
+helm upgrade temporal charts/temporal -n ai-ops --reset-then-reuse-values --set webUi.enabled=true
+```
+
+cert-manager issues the ingress certificate from `webUi.ingress.clusterIssuer`
+(`letsencrypt-prod`) into Secret `temporal-ui-tls`. Until it has, nginx serves its "Kubernetes
+Ingress Controller Fake Certificate". The HTTP-01 challenge goes through a separate solver
+Ingress that cert-manager creates (no `http01-edit-in-place`), because the challenge would
+fail basic auth inside ours. Watch the certificate:
+
+```bash
+kubectl -n ai-ops get certificate,challenge
+```
+
+```bash
+kubectl -n ai-ops describe certificate temporal-ui-tls
+```
+
+Check it: without credentials the host answers 401. With credentials it opens on
+`ewkit-production`, and the server log has no denial for `CN=web-ui`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://temporal-ui.servicex.ssl-hep.org/
+```
+
+```bash
+kubectl -n ai-ops logs deploy/temporal -c temporal | grep -E 'Denied' | grep 'CN=web-ui'
+```
+
+## Metrics
+
+The server exports Prometheus metrics on 9090 (`/metrics`), on the in-cluster Service only,
+never on the public one. The server pod carries `prometheus.io/scrape|port|path` annotations
+(`metrics.podAnnotations`) for a Prometheus that discovers pods that way. With the Prometheus
+Operator, set `metrics.serviceMonitor.enabled=true` (and any labels its Prometheus selects on
+in `metrics.serviceMonitor.labels`). To check what is there before Prometheus is wired up:
+
+```bash
+kubectl -n ai-ops port-forward svc/temporal 9090:9090
+```
+
+```bash
+curl -s localhost:9090/metrics | grep -c '^temporal_'
+```
+
 ## Backups
 
 Run one now:
@@ -172,13 +254,49 @@ Run one now:
 kubectl -n ai-ops create job --from=cronjob/temporal-backup temporal-backup-manual
 ```
 
-Restore into a scratch database (the restore test from the phase 1 checklist). From a pod
-that mounts the backup PVC, e.g. a copy of the backup Job with `sleep infinity` as its command,
-as the superuser (`PGUSER=postgres`, `PGPASSWORD` from `POSTGRES_PASSWORD` in the Secret; the
-`temporal` user cannot create databases):
+Restore into a scratch database (the restore test from the phase 1 checklist; done
+2026-11-19). It needs a pod that mounts the backup PVC (read-only) and connects as the
+superuser, because the `temporal` user cannot create databases. The PVC is ReadWriteOnce, so
+don't start the pod while a backup job is running:
 
 ```bash
-createdb temporal_restore_test && pg_restore --no-owner -d temporal_restore_test /backup/temporal-<stamp>.dump && psql -d temporal_restore_test -c 'select * from schema_version'
+kubectl -n ai-ops apply -f - <<'EOF'
+apiVersion: v1
+kind: Pod
+metadata: {name: temporal-restore-test}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 999, runAsGroup: 999, fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: restore
+      image: docker.io/postgres:18.6
+      command: [sleep, "3600"]
+      env:
+        - {name: PGUSER, value: postgres}
+        - {name: PGDATABASE, value: postgres}
+        - {name: PGPASSWORD, valueFrom: {secretKeyRef: {name: temporal-db-credentials, key: POSTGRES_PASSWORD}}}
+        - {name: PGHOST, valueFrom: {secretKeyRef: {name: temporal-db-credentials, key: DB_HOST}}}
+        - {name: PGPORT, valueFrom: {secretKeyRef: {name: temporal-db-credentials, key: DB_PORT}}}
+      securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+      volumeMounts:
+        - {name: backup, mountPath: /backup, readOnly: true}
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - {name: backup, persistentVolumeClaim: {claimName: temporal-backup, readOnly: true}}
+    - {name: tmp, emptyDir: {}}
+EOF
+```
+
+```bash
+kubectl -n ai-ops exec temporal-restore-test -- bash -c 'createdb temporal_restore_test && pg_restore --no-owner --exit-on-error -d temporal_restore_test /backup/temporal-<stamp>.dump && psql -d temporal_restore_test -c "select * from schema_version"'
+```
+
+Compare row counts with the live `temporal` database (e.g. `current_executions`,
+`history_node`), then clean up:
+
+```bash
+kubectl -n ai-ops exec temporal-restore-test -- dropdb temporal_restore_test && kubectl -n ai-ops delete pod temporal-restore-test
 ```
 
 To restore for real, scale the server to zero first

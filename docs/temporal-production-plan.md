@@ -13,6 +13,9 @@ one server process, groundhog2k Postgres, the LoadBalancer IP as the endpoint un
 DNS record or passthrough, and the server image built by CI for every branch.
 Revised 2026-10-24: phase 1 certificates built: `pki/` (`agentic-ops-pki`) for the root, the
 worker CA and every certificate, the `reader` role, and roles checked against the issuing CA.
+Revised 2026-11-18: the phase 1 endpoint passed `test_authz.py` and the AF no-op job with the
+production CA. The Web UI uses basic auth at the ingress instead of CERN SSO, and readers may
+make the three cluster-scoped reads the UI needs. Metrics scraping is in the chart.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -514,8 +517,9 @@ The server is reachable from the internet, so:
   name in the server certificate. Nothing may terminate TLS in front of it: that hides the
   client certificate the authorizer depends on. River's nginx ingress terminates TLS (no
   passthrough), so it cannot be used unless passthrough is enabled. The frontend's HTTP API
-  stays off. The Web UI and admin tools stay behind CERN SSO (oauth2-proxy) on an internal
-  address.
+  stays off. The Web UI is behind River's nginx ingress with basic auth, and talks to the
+  frontend with a `reader` certificate (read-only, one namespace); admin tools stay on the
+  operator's machine.
 - **Personal credentials during development.** The ops-executor holds Ben's VOMS proxy and
   IDTOKEN as Secrets, and anyone who can read Secrets in the namespace can act as Ben on the AF
   and in Rucio. So: the shortest token lifetime that is workable (phase 0 used 1 day), the
@@ -629,25 +633,52 @@ Work:
    checked against the issuing CA (worker only from the intermediate). Go tests and
    `test_authz.py` extended to cover them. *Built:* `pki/` (`agentic-ops-pki`; the server
    trusts the worker CAs listed in `worker-ca.pem` from the TLS Secret); every denial is now
-   logged with the certificate subject. Passes locally. *Still to do:* issue the production CA,
-   update the `temporal-tls` Secret and run `test_authz.py` against River, through the
-   LoadBalancer IP until the DNS name exists.
+   logged with the certificate subject. Passes locally. *Done 2026-11-18:* production CA
+   issued and in the `temporal-tls` Secret; `test_authz.py` passes against River in
+   `ewkit-production` through the LoadBalancer IP (192.170.236.183), and the AF no-op job
+   completes with an `ewkit-phase0` certificate from the worker CA (see
+   [phase0-results.md](phase0-results.md), questions 1 and 8). *Still to do:* repeat both
+   through the DNS name once it exists, and move the root key offline.
 5. **Namespace.** `ewkit-production`, 30-day retention, the search attributes from
    [Workflows](#workflows). *Built:* `phase0/shim/admin.py --search-attributes`, run with the
    admin certificate.
-6. **Web UI** behind oauth2-proxy with CERN SSO, on an internal address, using a `reader`
-   certificate.
+6. **Web UI** behind River's nginx ingress with basic auth, using a `reader` certificate.
+   **Decided 2026-11-18:** basic auth, not oauth2-proxy with CERN SSO. Readers may also call
+   `GetClusterInfo`, `ListNamespaces` and `GetSearchAttributes`, which the UI makes on every
+   page and Temporal's default authorizer allows only to a system role. *Built:*
+   `charts/temporal` (`webUi`), `temporal-server/authz`. *Still to do:* deploy and check on
+   River.
 7. **Metrics.** Server metrics (port 9090) scraped by whatever Prometheus River offers (to find
-   out), and a server health alert. The full alert set comes in phase 6.
+   out), and a server health alert. The full alert set comes in phase 6. *Built:* scrape
+   annotations on the server pod and an optional ServiceMonitor. *Still to do:* find out what
+   River runs and wire it up.
 
 Done when:
 
 - `test_authz.py` passes through the public DNS name, and the server logs every denial with the
-  certificate subject
+  certificate subject (*passed through the LoadBalancer IP, 2026-11-18*)
 - an AF job (`phase0/jobs/noop.sub`) completes the no-op activity through that name, with a
-  worker certificate signed by the intermediate
-- a workflow started before a restart of every server pod completes after it
-- a Postgres backup is restored into a scratch database
+  worker certificate signed by the intermediate (*passed through the LoadBalancer IP,
+  2026-11-18*)
+- a workflow started before a restart of every server pod completes after it (*passed
+  2026-11-19:* a 600-second no-op (`dataset/phase0/restart-check-20261119`) in
+  `ewkit-production`, with the activity worker on a laptop using the `ewkit-phase0` worker
+  certificate, over a `kubectl port-forward`. During the activity, `rollout restart
+  deploy/temporal` (new pod ready in 12 s) and then `delete pod temporal-postgres-0` (ready in
+  31 s; it moved from fiona01 to river-c031). The server logged `shard status unknown` errors
+  for 5 s once Postgres was back. The activity finished on its first attempt with 120
+  heartbeats, and the workflow completed. The client had to retry: `start_noop.py`'s
+  `handle.result()` died with a transport error when the connection dropped, and a new
+  controller process picked the workflow up. Phase 2's controller must retry RPC errors.)
+- a Postgres backup is restored into a scratch database (*passed 2026-11-19:* a manual job from
+  the `temporal-backup` CronJob, run after the restart check, wrote `temporal` (148K) and
+  `temporal_visibility` (48K). Both were restored with `pg_restore --no-owner --exit-on-error`
+  into `temporal_restore_test` and `temporal_visibility_restore_test`, using a pod that mounts
+  the backup PVC read-only (README, Backups). Schema versions (1.19, 1.14), table counts and the
+  row counts of `namespaces`, `current_executions`, `executions`, `history_node`, `shards` and
+  `executions_visibility` matched the live databases. The restart-check workflow was in both
+  copies, completed. The scratch databases were then dropped. The PVC held the 7 nightly dumps
+  `keepDays` allows.)
 
 Requests to make now, because later phases wait on them:
 

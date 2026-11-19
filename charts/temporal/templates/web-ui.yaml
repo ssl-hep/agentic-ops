@@ -1,0 +1,147 @@
+{{- if .Values.webUi.enabled }}
+{{- $component := "web-ui" }}
+{{- $name := printf "%s-web-ui" (include "temporal.fullname" .) }}
+## Temporal Web UI. It talks to the frontend over mTLS with a reader certificate (read-only,
+## scoped to temporal.namespace), and people reach it through the nginx ingress with basic
+## auth. TLS ends at the ingress; only this UI-to-frontend hop carries the client certificate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+    {{- include "temporal.selectorLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "temporal.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "temporal.selectorLabels" (dict "ctx" $ "component" $component) | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      {{- with .Values.webUi.avoidNodes }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: NotIn
+                    values:
+                      {{- toYaml . | nindent 22 }}
+      {{- end }}
+      securityContext:
+        ## The image's temporal user
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web-ui
+          image: {{ printf "%s:%s" .Values.webUi.image.repository .Values.webUi.image.tag | quote }}
+          imagePullPolicy: {{ .Values.webUi.image.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            ## The headless Service, so the name resolves straight to the server pod: on River
+            ## the ClusterIP path timed out from river-c* nodes while pod IPs worked
+            ## (2026-11-18). Its name is not in the server certificate, so the certificate is
+            ## checked against endpoint.serverName instead.
+            - name: TEMPORAL_ADDRESS
+              value: {{ printf "%s-headless:7233" (include "temporal.fullname" .) | quote }}
+            - name: TEMPORAL_TLS_SERVER_NAME
+              value: {{ .Values.endpoint.serverName | quote }}
+            - name: TEMPORAL_TLS_ENABLE_HOST_VERIFICATION
+              value: "true"
+            - name: TEMPORAL_TLS_CA
+              value: /etc/temporal-ui/tls/ca.pem
+            - name: TEMPORAL_TLS_CERT
+              value: /etc/temporal-ui/tls/cert.pem
+            - name: TEMPORAL_TLS_KEY
+              value: /etc/temporal-ui/tls/key.pem
+            - name: TEMPORAL_DEFAULT_NAMESPACE
+              value: {{ .Values.temporal.namespace | quote }}
+            - name: TEMPORAL_UI_PORT
+              value: "8080"
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.webUi.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tls, mountPath: /etc/temporal-ui/tls, readOnly: true}
+      volumes:
+        ## ca.pem, cert.pem and key.pem: the reader client from agentic-ops-pki
+        - name: tls
+          secret:
+            secretName: {{ .Values.webUi.tlsSecretName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "temporal.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "temporal.selectorLabels" (dict "ctx" $ "component" $component) | nindent 4 }}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+{{- with .Values.webUi.ingress }}
+{{- if .enabled }}
+---
+## Basic auth at the ingress: Secret basicAuthSecretName holds an htpasswd file under the
+## key "auth" (README, "Web UI").
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "temporal.labels" $ | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: {{ required "webUi.ingress.basicAuthSecretName is required" .basicAuthSecretName | quote }}
+    nginx.ingress.kubernetes.io/auth-realm: "agentic-ops Temporal"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {{- if .clusterIssuer }}
+    ## No http01-edit-in-place: cert-manager then adds its own solver Ingress for the host,
+    ## without basic auth. Edited into this Ingress, the challenge would get a 401.
+    cert-manager.io/cluster-issuer: {{ .clusterIssuer | quote }}
+    {{- end }}
+    {{- with .annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .className }}
+  {{- if .tlsSecretName }}
+  tls:
+    - hosts: [{{ .host | quote }}]
+      secretName: {{ .tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "webUi.ingress.host is required" .host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $name }}
+                port: {name: http}
+{{- end }}
+{{- end }}
+{{- end }}
