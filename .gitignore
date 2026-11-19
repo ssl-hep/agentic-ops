@@ -26,3 +26,4 @@ backend/scratch/
 phase0/workerenv/dist/
 phase0/jobs/logs/
 phase0/jobs/pfns.txt
+.idea/
