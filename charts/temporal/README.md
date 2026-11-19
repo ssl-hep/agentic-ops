@@ -182,8 +182,9 @@ kubectl -n ai-ops logs deploy/temporal -c temporal | grep -E 'Denied|Authorizati
 
 ## Web UI
 
-Off by default (`webUi.enabled`). The `temporalio/ui` pod reaches the frontend over the
-in-cluster Service with the `reader` certificate: it can list and read workflows in
+On by default (`webUi.enabled`). The `temporalio/ui` pod reaches the frontend through the
+headless Service `temporal-headless`, straight to the server pod (on River, ClusterIP routing
+timed out from river-c* nodes), with the `reader` certificate: it can list and read workflows in
 `temporal.namespace` and nothing else. People reach it through the nginx ingress at
 `webUi.ingress.host` with **basic auth**. TLS ends at the ingress, which is fine here: the
 client certificate the authorizer needs is the UI's own, on the hop behind it.
@@ -244,7 +245,8 @@ The server exports Prometheus metrics on 9090 (`/metrics`), on the in-cluster Se
 never on the public one. The server pod carries `prometheus.io/scrape|port|path` annotations
 (`metrics.podAnnotations`) for a Prometheus that discovers pods that way. With the Prometheus
 Operator, set `metrics.serviceMonitor.enabled=true` (and any labels its Prometheus selects on
-in `metrics.serviceMonitor.labels`). To check what is there before Prometheus is wired up:
+in `metrics.serviceMonitor.labels`). Nothing scrapes it during development (River's Prometheus
+Operator is not used until phase 6). To check what is there:
 
 ```bash
 kubectl -n ai-ops port-forward svc/temporal 9090:9090

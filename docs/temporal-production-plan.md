@@ -18,7 +18,9 @@ production CA. The Web UI uses basic auth at the ingress instead of CERN SSO, an
 make the three cluster-scoped reads the UI needs. Metrics scraping is in the chart.
 Revised 2026-11-19: the endpoint is named `temporal.ndslabs.org`, in a domain we control; the
 server certificate carries that name. The LoadBalancer IP stopped answering from outside River
-the same day, so for now the name points at node IPs and clients use NodePort 31644.
+the same day, so for now the name points at node IPs and clients use NodePort 31644. The
+restart and backup-restore checks passed, the Web UI is deployed and the root CA key is
+offline. No Prometheus during development: metrics move to phase 6.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -647,7 +649,7 @@ Work:
    `ewkit-production` through the LoadBalancer IP (192.170.236.183), and the AF no-op job
    completes with an `ewkit-phase0` certificate from the worker CA (see
    [phase0-results.md](phase0-results.md), questions 1 and 8). *Done 2026-11-19:* both repeated
-   through `temporal.ndslabs.org:31644` (see task 3). *Still to do:* move the root key offline.
+   through `temporal.ndslabs.org:31644` (see task 3). Root key moved offline 2026-11-19.
 5. **Namespace.** `ewkit-production`, 30-day retention, the search attributes from
    [Workflows](#workflows). *Built:* `phase0/shim/admin.py --search-attributes`, run with the
    admin certificate.
@@ -655,20 +657,23 @@ Work:
    **Decided 2026-11-18:** basic auth, not oauth2-proxy with CERN SSO. Readers may also call
    `GetClusterInfo`, `ListNamespaces` and `GetSearchAttributes`, which the UI makes on every
    page and Temporal's default authorizer allows only to a system role. *Built:*
-   `charts/temporal` (`webUi`), `temporal-server/authz`. *Still to do:* deploy and check on
-   River.
-7. **Metrics.** Server metrics (port 9090) scraped by whatever Prometheus River offers (to find
-   out), and a server health alert. The full alert set comes in phase 6. *Built:* scrape
-   annotations on the server pod and an optional ServiceMonitor. *Still to do:* find out what
-   River runs and wire it up.
+   `charts/temporal` (`webUi`), `temporal-server/authz`. *Done 2026-11-19:* running on River
+   at `temporal-ui.servicex.ssl-hep.org`, with a `letsencrypt-prod` certificate from
+   cert-manager. The UI dials the server through the headless Service `temporal-headless`,
+   because River's ClusterIP routing timed out from river-c* nodes while pod IPs worked.
+7. **Metrics.** Server metrics on port 9090. *Built:* scrape annotations on the server pod and
+   an optional ServiceMonitor (River runs the Prometheus Operator, in namespace `prom`).
+   **Decided 2026-11-19:** no Prometheus during development. Scraping and the server health
+   alert move to phase 6.
 
 Done when:
 
 - `test_authz.py` passes through the public DNS name, and the server logs every denial with the
-  certificate subject (*passed through the LoadBalancer IP, 2026-11-18*)
+  certificate subject (*passed through the LoadBalancer IP, 2026-11-18, and through
+  `temporal.ndslabs.org:31644`, 2026-11-19*)
 - an AF job (`phase0/jobs/noop.sub`) completes the no-op activity through that name, with a
   worker certificate signed by the intermediate (*passed through the LoadBalancer IP,
-  2026-11-18*)
+  2026-11-18, and through `temporal.ndslabs.org:31644`, 2026-11-19*)
 - a workflow started before a restart of every server pod completes after it (*passed
   2026-11-19:* a 600-second no-op (`dataset/phase0/restart-check-20261119`) in
   `ewkit-production`, with the activity worker on a laptop using the `ewkit-phase0` worker
@@ -693,7 +698,7 @@ Requests to make now, because later phases wait on them:
 
 | Request | From | Needed by |
 |---|---|---|
-| DNS record for the load balancer (or SSL passthrough) | River admins | Phase 1 |
+| Fix the LoadBalancer IP 192.170.236.183, unreachable from outside River since 2026-11-19; ClusterIP routing that times out from river-c* nodes | River admins | Phase 1 cleanup (NodePort until then); phase 3, for in-cluster workers |
 | XCache: cache keying, capacity at production scale; is `/cold` a slower tier; why a small job waited 16 min; can `af-io` get priority | AF admins | Phase 4, before phase 6 |
 
 The robot identity, accounting groups and a shared `/data/agentic-ops` are not requested
@@ -733,7 +738,9 @@ and recorded.
 ### Phase 6: scale and hardening
 
 A full signal list (about 3.4k datasets): batched child workflows, continue-as-new, pool keeper
-tuning, alerting, worker versioning drills, backup and restore test.
+tuning, worker versioning drills, backup and restore test. Metrics, deferred from phase 1:
+Prometheus scraping of the server (the chart's ServiceMonitor) and SDK metrics, and the alerts
+in [Deployment](#deployment), server health first.
 
 Leaving development, before anyone but Ben runs productions:
 
