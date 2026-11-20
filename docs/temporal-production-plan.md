@@ -21,6 +21,8 @@ server certificate carries that name. The LoadBalancer IP stopped answering from
 the same day, so for now the name points at node IPs and clients use NodePort 31644. The
 restart and backup-restore checks passed, the Web UI is deployed and the root CA key is
 offline. No Prometheus during development: metrics move to phase 6.
+Revised 2026-11-20: phase 2 planned in detail: what is real and what is faked, the design
+points it settles, and ten steps.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -706,11 +708,104 @@ during development; see phase 6.
 
 ### Phase 2: workflows against fakes
 
-Workflows and activities with fake Rucio and HTCondor. Tests use Temporal's time-skipping test
-environment for the timers (retry backoff, pool keeper intervals) and replay tests against
-saved histories on CI to catch determinism breaks. Done when a simulated production with
-injected evictions, out-of-memory failures, unreadable and deleted replicas, tape-only files
-and a bad file finishes with the invariants holding.
+Workflows and activities with fake Rucio and HTCondor, in a new `worker/` package with one
+entry point per task queue (all run in one process in tests). Tests use Temporal's
+time-skipping test environment for the timers (retry backoff, pool keeper intervals) and
+replay tests against saved histories on CI to catch determinism breaks. Done when a simulated
+production with injected evictions, out-of-memory failures, unreadable and deleted replicas,
+tape-only files and a bad file finishes with the invariants holding.
+
+What is real and what is faked:
+
+| Part | Phase 2 |
+|---|---|
+| Workflows: `ProductionWorkflow`, `DatasetWorkflow`, `PoolKeeperWorkflow`, `AfIoKeeperWorkflow` | Real |
+| `controller` activities: unit planning, reporting writes, `collect_evidence`, the fixed-rule signature matcher, lists, invariants, what remains | Real |
+| The `decide` Update, its validator and the auto-approval policy table | Real |
+| `ops`: `snapshot_dataset`, `refresh_replicas`, `condor_submit`/`condor_rm`/`condor_q` | Fake Rucio (scripted files, events, disk and tape replicas, replicas that are deleted or move) and fake HTCondor |
+| `run_unit` on `ewkit-<production>-<memclass>` | Fake, driven by a fault plan |
+| `af-io`: `check_build`, `verify_unit`, `fetch_log`, `cleanup_attempt`, `write_lists` | Fake, over a temporary directory standing in for the data root |
+| `triage` | Scripted proposals; the agent comes in phase 5 |
+
+The fake HTCondor's `condor_submit` starts in-process fake unit workers that poll the real
+`ewkit-<production>-<memclass>` queues, so backlog, pickup, heartbeat timeouts and evictions
+go through Temporal itself. An eviction is a fake worker shut down mid-activity.
+
+Design points settled in phase 2:
+
+- **Payloads shared with EWKit.** `run_unit` and the `af-io` activities are implemented in
+  EWKit in phase 3, so `UnitSpec`, `Manifest`, the error type names and the `verify_unit`
+  result are plain JSON-shaped dataclasses in `worker/contracts.py`, with example JSON
+  files. Activities are called by name, as in phase 0; neither side imports the other's code.
+  Phase 3 tests EWKit's worker against the example files.
+- **Who owns state.** The workflow holds unit state; Postgres is a projection written by
+  activities. Every write is an idempotent upsert keyed on unit and attempt, because
+  activities retry. The invariants are SQL over the projection, so tests use a real Postgres
+  in a container, not an in-memory store.
+- **Error classes** are `ApplicationError` types. `InputUnreadable` is retryable after
+  `refresh_replicas`. `OutOfMemory` and `Walltime` are non-retryable at the activity level:
+  the workflow reschedules the unit on the next memory class (4g, 8g, 16g), because a retry
+  policy cannot change the task queue, and after 16g proposes a split. `BadInput` and
+  `CodeError` go to triage. "The same file fails on two hosts" is counted per file by the
+  dataset workflow.
+- **History size.** `DatasetWorkflow` keeps its state small and serializable and continues as
+  new when `is_continue_as_new_suggested()` says so, tested with a low threshold. Phase 6
+  tunes it.
+- **Cancellation.** Cancelling a production cascades to its children (parent close policy)
+  and to running activities, which receive it through heartbeats. The production workflow
+  then runs `condor_rm` by production tag as a cleanup step that is not itself cancelled.
+- **Two test environments.** Time-skipping for timer logic (backoff, pool keeper interval,
+  the 15-minute triage batching window), with fake activities that return at once. The local
+  dev server for the end-to-end simulation, with intervals shortened by configuration; it
+  supports search attributes and task queue statistics, which the time-skipping server may
+  not (checked in step 1). The pool keeper reads backlog through an activity in both, since
+  workflow code cannot make client calls.
+- **Clients retry.** Anything holding a client handle (a starter, the CLI, the simulation
+  driver) retries RPC errors and reattaches to the workflow by its ID; see the phase 1 restart
+  check.
+
+Steps, each about one PR ending in passing tests:
+
+1. **Skeleton.** `worker/` as a uv project, `temporalio` pinned to the worker environment's
+   version, `contracts.py`, helpers for queue names and workflow IDs (`production/<id>`,
+   `dataset/<id>/<did>`, production IDs `[a-z0-9]{1,40}`), a CI job. A trivial workflow runs
+   in both test environments; check whether the time-skipping server supports Updates, child
+   workflows and search attribute upserts.
+2. **Pure logic, no Temporal.** Unit planning from file sizes and first-read rates, the unit
+   state machine, splits (the parent becomes `SUPERSEDED`), memory-class escalation, error
+   classification, the signature matcher (`[3010]`, `std::bad_alloc`, corrupt `TFile`).
+   Property tests: after any sequence of splits and exclusions, every snapshot file is in
+   exactly one live unit.
+3. **Reporting schema.** Migrations for the [Bookkeeping](#bookkeeping) tables plus
+   selections; idempotent record activities; the invariant and what-remains queries, tested
+   against Postgres in Docker.
+4. **Fakes and scenarios.** Fake Rucio, fake HTCondor, the fake data root, and a YAML scenario
+   format: datasets, plus faults per file, unit or attempt (eviction, out of memory,
+   unreadable replica, deleted replica, tape-only file, bad file, crash, late finisher).
+5. **`DatasetWorkflow`.** The happy path (snapshot, plan, run, verify, record, complete), then
+   one failure class at a time: eviction and heartbeat timeout; unreadable replica then
+   `refresh_replicas`; out of memory moving up a memory class; a late duplicate attempt
+   (rejected, then `cleanup_attempt`); a tape-only file waiting on a `decide` Update; a bad
+   file.
+6. **Triage loop.** `collect_evidence`, fixed rules first, then the scripted triage activity;
+   the `decide` validator (allowed actions, memory cap, maximum files excluded), the policy
+   table, `NeedsDecision`. In tests a scripted operator sends the Updates.
+7. **`ProductionWorkflow`.** `check_build`, the smoke test and launch approval, children in
+   batches with a concurrency limit and continue-as-new, failure-batch signals grouped over 15
+   minutes, pause, resume and cancel, the lists at the end.
+8. **Keepers.** `PoolKeeperWorkflow` (backlog against targets per memory class, submit, remove
+   idle and held jobs, stop on pause or done) and `AfIoKeeperWorkflow`, mostly under time
+   skipping.
+9. **The done-when simulation.** About 20 datasets and a few hundred units with the full fault
+   mix, and the controller worker restarted partway through. It must finish with the
+   invariants clean, event totals equal to the snapshot minus approved exclusions, at most one
+   accepted attempt per unit, and rejected outputs cleaned up. Its histories are saved as
+   fixtures and replayed on CI, followed by one `workflow.patched()` drill: change workflow
+   code and confirm the old histories still replay.
+10. **On River (optional, recommended).** A small simulated production in `ewkit-production`,
+    with fake workers holding real worker certificates, to check the authorizer against the
+    real workflow IDs, child workflows and queue names. Phases 0 and 1 only checked it with the
+    no-op workflow.
 
 ### Phase 3: EWKit worker
 
