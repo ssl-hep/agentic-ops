@@ -31,6 +31,11 @@ in full; phase 2 design points from the workflow sketch (small workflow state, r
 workflow code, abandoned children reporting by signal, group decisions as signals). Decided:
 the workflow does every retry of `run_unit` (Temporal's `maximum_attempts=1`), so each retry is
 a new attempt with its own output path.
+Revised 2026-11-20: phase 2 step 2 built: unit planning, the unit state machine, splits and
+exclusions, failure classes and the fixed-rule matcher, as pure modules. Files with no disk
+replica are planned into `BLOCKED` units rather than left out, and excluding files is a split,
+so every snapshot file is always in exactly one live unit. Unit IDs carry a hash of the DID;
+`Walltime` is triaged as a split, and an output rejected by verification is retried once.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -153,12 +158,16 @@ list around would bloat histories for no gain.
 **Snapshot.** When a dataset is planned, every input file (GUID, LFN, size, checksum, event
 count from Rucio) is frozen into `dataset_snapshots`, together with the file's disk replicas at
 that moment. Coverage and event-count checks are made against the files. Replicas only say
-where to read a file, and are refreshed when reading fails.
+where to read a file, and are refreshed when reading fails. Files with no disk replica are
+planned too, into `BLOCKED` units of their own, so every file is in a unit from the start.
 
 **Unit.** A chunk of files from one dataset, sized for 2–4 hours of EWRun, planned from
 first-read input rates rather than cached ones. Units are what workers
 process; one worker processes many units, from any datasets of its production. Large data
-containers are split by files, never processed as a whole.
+containers are split by files, never processed as a whole. Unit IDs are unique within a
+production, whose datasets share one output directory: `<number>-<hash8>-u<NNNN>`, with the
+DSID or run number and the start of the DID's sha256 (mc23a and mc23d of one DSID differ only
+there). A split unit is `SUPERSEDED` by children `<unit>.1`, `<unit>.2`, …
 
 **Attempt.** One try at a unit. Output paths include the attempt number, so a late finisher can
 never overwrite or double-count the attempt that was accepted.
@@ -201,8 +210,9 @@ Input: `production_id`, DID.
 
 1. `snapshot_dataset` on `ops`: read-only Rucio calls list the DID's files (GUID, size,
    checksum, events) and each file's disk replicas as `root://` PFNs. Files with no disk
-   replica (only on tape, or lost) are not planned. The dataset then waits for a person to
-   exclude them, or to have them staged outside agentic-ops and ask for a refresh.
+   replica (only on tape, or lost) go into `BLOCKED` units of their own. The dataset then
+   waits for a person to exclude them, or to have them staged outside agentic-ops and ask for
+   a refresh, which moves the files now on disk into a `PLANNED` unit.
 2. Plan units over the snapshot at once: there is no transfer to wait for.
 3. Run each unit (`run_unit` on `ewkit-<production>-<memclass>`), then `verify_unit` on
    `af-io`. When a unit fails because no replica of a file could be read, `refresh_replicas`
@@ -429,8 +439,9 @@ recorded as a duplicate and deleted by `cleanup_attempt` on `af-io`.
 
 Checked continuously by a reporting activity and exposed in the TUI:
 
-- each snapshot file is in exactly one live unit (not `SUPERSEDED`), unless `EXCLUDED` with an
-  approval on record
+- each snapshot file is in exactly one live unit (not `SUPERSEDED`); excluded files are those
+  of `EXCLUDED` units, each with an approval on record. Excluding some of a unit's files
+  supersedes it with a unit of the kept files and an `EXCLUDED` unit of the others
 - a dataset is complete only when every unit is `DONE` or approved `EXCLUDED`
 - no unit has more than one accepted attempt
 - snapshot drift: a periodic comparison with Rucio flags files added to a container after
@@ -492,9 +503,10 @@ Rules for `af-io`:
 |---|---|---|
 | infrastructure | eviction, heartbeat timeout, node failure | The workflow retries with backoff as a new attempt (heartbeat timeout 10 min); after N tries, triage |
 | transient input | xrootd timeout, no candidate replica readable | `refresh_replicas`, then retry with backoff; after N tries, `BLOCKED` |
-| resources | out of memory, walltime | One retry on the next `memclass` queue, or propose a split |
+| resources | out of memory, walltime | Out of memory: one retry on the next `memclass` queue, or a split past 16g. Walltime: a split |
 | bad input | same file fails on two hosts | Proposal to exclude the file |
 | code or config | traceback, same crash twice | Proposal for a new production |
+| rejected | `verify_unit` rejects the output | One retry as a new attempt, then triage |
 
 **Decided 2026-11-20: the workflow does every retry of `run_unit`.** Its retry policy has
 `maximum_attempts=1`, so Temporal never retries it; each retry is a new attempt with its own
@@ -813,9 +825,10 @@ Design points settled in phase 2:
   worker is retried with backoff, and after a few tries triaged. `InputUnreadable` gets
   `refresh_replicas` before each retry, and after a few tries the unit is `BLOCKED` and
   triaged. `OutOfMemory`
-  and `Walltime` go to triage, where a fixed rule proposes the next memory class (4g, 8g,
-  16g; a retry policy cannot change the task queue) and the policy table approves the first
-  increase without a person; past 16g the proposal is a split. A `BadInput` file is retried
+  goes to triage, where a fixed rule proposes the next memory class (4g, 8g, 16g; a retry
+  policy cannot change the task queue) and the policy table approves the first increase
+  without a person; past 16g the proposal is a split. `Walltime` goes to triage with a
+  proposal to split, since more memory does not make a unit faster. A `BadInput` file is retried
   once; when the same GUID fails on a second host the dataset workflow triages it with a
   proposal to exclude the file. `CodeError` goes straight to triage.
 - **Small workflow state.** A dataset workflow keeps a summary per unit (ID, file count,
@@ -879,7 +892,12 @@ Steps, each about one PR ending in passing tests:
    state machine, splits (the parent becomes `SUPERSEDED`), memory-class escalation, error
    classification, the signature matcher (`[3010]`, `std::bad_alloc`, corrupt `TFile`).
    Property tests: after any sequence of splits and exclusions, every snapshot file is in
-   exactly one live unit.
+   exactly one live unit. *Built:* `units.py` (states, transitions, `coverage_violations`),
+   `planning.py` (`plan_units`, `split`, `split_even`, `exclude_files`, `unblock`),
+   `failures.py` (`classify`, `decide_next`), `signatures.py` (`match_signatures`, the closed
+   set of actions); stdlib only, checked by `tests/test_pure.py`. A hypothesis state machine
+   splits, excludes, stages and runs units and checks coverage and event totals after every
+   step.
 3. **Reporting schema.** Migrations for the [Bookkeeping](#bookkeeping) tables plus
    selections; idempotent record activities; the invariant and what-remains queries, tested
    against Postgres in Docker.

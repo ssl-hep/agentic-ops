@@ -28,8 +28,8 @@
   "exit_code": 0,
   "finished": "2026-11-20T16:47:53+00:00",
   "host": "c014.af.uchicago.edu",
-  "log_path": "/data/bengal1/agentic-ops/productions/zee2026a/logs/601189-u0003.a2.log",
-  "output_path": "/data/bengal1/agentic-ops/productions/zee2026a/outputs/601189-u0003.a2.root",
+  "log_path": "/data/bengal1/agentic-ops/productions/zee2026a/logs/601189-a2f173e1-u0003.a2.log",
+  "output_path": "/data/bengal1/agentic-ops/productions/zee2026a/outputs/601189-a2f173e1-u0003.a2.root",
   "replicas": [
     {
       "failed": [
@@ -51,5 +51,5 @@
   "started": "2026-11-20T14:02:11+00:00",
   "status": "succeeded",
   "sum_of_weights": 18734000.0,
-  "unit_id": "601189-u0003"
+  "unit_id": "601189-a2f173e1-u0003"
 }

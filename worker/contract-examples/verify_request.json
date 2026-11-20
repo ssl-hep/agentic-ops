@@ -6,7 +6,7 @@
   "attempt": 2,
   "events_expected": 20000,
   "is_mc": true,
-  "manifest_path": "/data/bengal1/agentic-ops/productions/zee2026a/manifests/601189-u0003.a2.json",
-  "output_path": "/data/bengal1/agentic-ops/productions/zee2026a/outputs/601189-u0003.a2.root",
-  "unit_id": "601189-u0003"
+  "manifest_path": "/data/bengal1/agentic-ops/productions/zee2026a/manifests/601189-a2f173e1-u0003.a2.json",
+  "output_path": "/data/bengal1/agentic-ops/productions/zee2026a/outputs/601189-a2f173e1-u0003.a2.root",
+  "unit_id": "601189-a2f173e1-u0003"
 }

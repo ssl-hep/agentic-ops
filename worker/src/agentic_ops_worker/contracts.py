@@ -38,8 +38,8 @@ class ErrorType:
     INPUT_UNREADABLE = "InputUnreadable"
     # EWRun ran out of memory. Triage proposes the next memory class; past 16g, a split.
     OUT_OF_MEMORY = "OutOfMemory"
-    # The unit hit the watchdog's hard time limit, or its output stopped growing. Handled like
-    # OutOfMemory.
+    # The unit hit the watchdog's hard time limit, or its output stopped growing. Triage proposes
+    # a split.
     WALLTIME = "Walltime"
     # An input file is bad (corrupt, unreadable on every replica in a way a retry will not fix).
     # Retried once; when the same GUID fails on a second host, triage proposes excluding it.
