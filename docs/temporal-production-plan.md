@@ -36,6 +36,10 @@ exclusions, failure classes and the fixed-rule matcher, as pure modules. Files w
 replica are planned into `BLOCKED` units rather than left out, and excluding files is a split,
 so every snapshot file is always in exactly one live unit. Unit IDs carry a hash of the DID;
 `Walltime` is triaged as a split, and an output rejected by verification is retried once.
+Revised 2026-11-20: phase 2 step 3 built: the reporting schema (migrations, record activities,
+the invariant and what-remains views), tested against Postgres 18 in Docker. Decided: writes of
+units, datasets and productions carry a per-workflow sequence number so a late retry cannot undo a
+newer write; the tables gain `datasets`, `unit_files` and `selection_dids`.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -129,7 +133,7 @@ for (see [Credentials and security](#credentials-and-security)). Names and IDs a
 
 | Queue | Polled by | Runs |
 |---|---|---|
-| `controller` | controller pods (k8s) | All workflow code. Activities that need no grid credential and no file: `plan_units`, `unit_spec`, `replan_unit`, the reporting writes (`record_unit`, `record_decision`), `collect_evidence`, `match_signatures`, `auto_approve`, `selection_page`, `queue_status`, `group_failures`, `build_lists`, `complete_dataset`, the invariant checks |
+| `controller` | controller pods (k8s) | All workflow code. Activities that need no grid credential and no file: `plan_units`, `unit_spec`, `replan_unit`, the reporting writes (`record_snapshot`, `record_replicas`, `record_units`, `record_unit`, `record_attempt`, `record_decision`, `record_dataset`, `record_production`), `collect_evidence`, `match_signatures`, `auto_approve`, `selection_page`, `queue_status`, `group_failures`, `build_lists`, `complete_dataset`, `check_invariants`, `what_remains` |
 | `ops` | ops-executor pod only (k8s) | Read-only Rucio: `snapshot_dataset`, `refresh_replicas`. HTCondor: `condor_submit` (signs and spools a worker certificate per job), `condor_jobs`, `condor_rm` |
 | `triage` | triage pods (k8s) | `triage`: the agent turns evidence into a typed proposal, only for failures no fixed rule matched |
 | `ewkit-<production>-<memclass>` | unit worker jobs (AF), memory classes `4g`, `8g`, `16g` | `run_unit`: EWRun on one unit's files, heartbeats, output and manifest written to `/data` |
@@ -407,16 +411,29 @@ quota to manage and no transfer to watch.
 ## Bookkeeping
 
 Temporal holds coordination state. Postgres (schema `production`) holds a reporting projection
-that activities write to and the TUI reads, plus the data Temporal is bad at aggregating.
+that activities write to and the TUI reads, plus the data Temporal is bad at aggregating. The
+schema is `worker/src/agentic_ops_worker/migrations/`, applied by `agentic-ops-migrate`; the writes
+are `reporting.py`, their payloads `records.py`.
 
 | Table | Contents |
 |---|---|
-| `productions` | Analysis, config, clone path, SHA, uncommitted-diff digest, release, tarball path and digest, tag, selection, owner, state, approvals |
+| `selections`, `selection_dids` | The approved DID list, its content hash, who approved it and the totals they saw |
+| `productions` | Analysis, config, clone path, SHA, uncommitted-diff digest, release, tarball path and digest, tag, selection, owner, state, launch approval |
+| `datasets` | Per production and DID: state, snapshot time, and at completion events and sum of weights |
 | `dataset_snapshots` | Per file: DID, GUID, LFN, size, checksum, events, snapshot time |
 | `file_replicas` | Per file and replica: RSE, PFN, preference, resolved time, last read outcome. Replaced by `refresh_replicas` |
-| `units` | Production, DID, file list, state, attempt count, failure count, memclass, parent unit (after a split) |
-| `attempts` | Append-only: unit, attempt, worker, condor `cluster.proc`, host, times, outcome, error class, output path, manifest |
+| `units` | Production, DID, state, attempt count, failure count, memclass, parent unit (after a split), the decision that excluded it |
+| `unit_files` | A unit's files in order. Written once: a split or exclusion makes new units. Each must be in the dataset's snapshot (a foreign key) |
+| `attempts` | Append-only: unit, attempt, condor `cluster.proc`, host, times, outcome, error class, paths, manifest, verification |
 | `decisions` | Append-only: proposal, who decided, decision, outcome. Mirrors the Updates in workflow history |
+
+Every write is idempotent, because activities retry. `units`, `datasets` and `productions` rows
+carry the writing workflow's sequence number and change only for a larger one, so a try that timed
+out but committed late cannot undo a newer write. Each `attempts` field is written once.
+`decisions` are written once, their outcome filled in once. A replica refresh replaces a file's
+replicas only if it is newer than the last. The invariants and what remains are views
+(`invariant_violations`, `what_remains`, `files_without_replica`, `unit_runtimes`), so the TUI and
+the backend read them as the activities do.
 
 Unit states: `PLANNED`, `QUEUED`, `RUNNING`, `VERIFYING`, `DONE`, `RETRY_WAIT`, `BLOCKED`,
 `NEEDS_DECISION`, `EXCLUDED`, `SUPERSEDED`, `CANCELLED`.
@@ -900,7 +917,18 @@ Steps, each about one PR ending in passing tests:
    step.
 3. **Reporting schema.** Migrations for the [Bookkeeping](#bookkeeping) tables plus
    selections; idempotent record activities; the invariant and what-remains queries, tested
-   against Postgres in Docker.
+   against Postgres in Docker. *Built:* `migrations/0001_reporting.sql` and `migrate.py`
+   (`agentic-ops-migrate`), `records.py` (pure: activity names and payloads), `reporting.py`
+   (the writes and `ReportingActivities`: `record_snapshot`, `record_replicas`, `record_units`,
+   `record_unit`, `record_attempt`, `record_decision`, `record_dataset`, `record_production`,
+   `check_invariants`, `what_remains`). A write the schema refuses fails as a non-retryable
+   `ReportingIntegrity` error. Tests run on `postgres:18` through testcontainers, one database per
+   test; a hypothesis state machine checks that the SQL invariants name the same files and units
+   as `coverage_violations`, including after injected breaks. Decision IDs are unique across
+   productions (workflow ID and a counter). Left for steps 4–5: whether `snapshot_dataset` writes
+   the snapshot from `ops` or returns pages for `record_snapshot` (a large container's file list
+   can pass 2 MB); the dataset workflow keeping its sequence number across continue-as-new.
+   Snapshot drift needs Rucio and comes later.
 4. **Fakes and scenarios.** Fake Rucio, fake HTCondor, the fake data root, and a YAML scenario
    format: datasets, plus faults per file, unit or attempt (eviction, out of memory,
    unreadable replica, deleted replica, tape-only file, bad file, crash, late finisher).

@@ -1,8 +1,8 @@
 # agentic-ops-worker
 
 Temporal workflows and activities for EWKit ntuple production
-([plan](../docs/temporal-production-plan.md), phase 2). So far, steps 1 (the skeleton) and 2 (pure
-logic, no Temporal):
+([plan](../docs/temporal-production-plan.md), phase 2). So far, steps 1 (the skeleton), 2 (pure
+logic, no Temporal) and 3 (the reporting schema):
 
 | Module | Contents |
 |---|---|
@@ -13,9 +13,13 @@ logic, no Temporal):
 | `planning.py` | `plan_units` from file sizes and first-read rates (tape-only files into `BLOCKED` units), unit IDs, `split`, `split_even`, `exclude_files`, `unblock` |
 | `failures.py` | Failure classes of `run_unit` and the workflow's next step after each: retry with backoff (refreshing replicas first for unreadable inputs), block, or triage |
 | `signatures.py` | Triage proposals (the closed set of actions) and the fixed rules: out of memory, walltime, corrupt `TFile`, xrootd `[3010]` |
+| `records.py` | What workflows record in the reporting schema: the `controller` activity names and their payloads, and the idempotency rules |
+| `reporting.py` | The reporting writes and reads over Postgres, and `ReportingActivities`. A write the schema refuses fails as non-retryable `ReportingIntegrity` |
+| `migrate.py`, `migrations/` | The reporting schema (`production`: tables, and the invariant and what-remains views), applied by `agentic-ops-migrate --dsn …` |
 
-The last four are pure: stdlib only, deterministic, no I/O (`tests/test_pure.py`), so workflow
-code can import them and they are tested with no server. `tests/test_units.py` runs a hypothesis
+`units.py`, `planning.py`, `failures.py`, `signatures.py` and `records.py` are pure: stdlib only,
+deterministic, no I/O (`tests/test_pure.py`), so workflow code can import them and they are tested
+with no server. Workflow code never imports `reporting.py`. `tests/test_units.py` runs a hypothesis
 state machine of splits, exclusions, stagings and attempts, checking after every step that each
 snapshot file is in exactly one live unit.
 
@@ -38,3 +42,8 @@ test server and the local dev server. The SDK downloads both binaries on first u
 | Timers skipped | yes | no |
 
 The default data converter cannot encode a `timedelta`: payloads carry durations as seconds.
+
+The reporting tests need Docker: they start `postgres:18` (the chart's version) once per session
+through testcontainers and give each test a database cloned from a migrated template. Without
+Docker they skip, except when `CI` is set. `tests/test_reporting_coverage.py` runs a hypothesis
+state machine that checks that the SQL invariants agree with `units.coverage_violations`.

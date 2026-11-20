@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 PACKAGE = Path(__file__).resolve().parents[1] / "src" / "agentic_ops_worker"
-PURE = ["names", "contracts", "units", "planning", "failures", "signatures"]
+PURE = ["names", "contracts", "units", "planning", "failures", "signatures", "records"]
 # Nothing that reads the clock, the environment, randomness or files
 FORBIDDEN = {"time", "random", "os", "pathlib", "socket", "subprocess", "uuid", "secrets", "io", "shutil"}
 
