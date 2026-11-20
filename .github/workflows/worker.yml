@@ -1,0 +1,36 @@
+# Lint and test the worker package (worker/) on every push that touches it. The tests start
+# Temporal's time-skipping test server and the CLI dev server, which the SDK downloads on first
+# use.
+name: worker
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'worker/**'
+      - 'temporal-server/authz/claimmapper.go'
+      - 'phase0/shim/admin.py'
+      - '.github/workflows/worker.yml'
+
+concurrency:
+  group: worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: worker/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -v

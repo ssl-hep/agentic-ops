@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "failed": [
+        {
+          "error": "[3010] Unable to open file: no such file or directory",
+          "pfn": "root://fax.mwt2.org:1094//pnfs/uchicago.edu/atlasdatadisk/rucio/mc23_13p6TeV/4a/1c/DAOD_PHYS.40123456._000017.pool.root.1"
+        },
+        {
+          "error": "[ERROR] Operation expired (code 206)",
+          "pfn": "root://xrootd.lcg.triumf.ca:1094//atlas/atlasdatadisk/rucio/mc23_13p6TeV/4a/1c/DAOD_PHYS.40123456._000017.pool.root.1"
+        }
+      ],
+      "guid": "3F2A9C1E-1B7D-4C4E-9E2A-0D6B5A1C2E3F"
+    }
+  ]
+}

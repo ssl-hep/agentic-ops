@@ -1,0 +1,8 @@
+{
+  "allowed_roots": [
+    "/data/bengal1/agentic-ops/productions/zee2026a",
+    "/data/bengal1/agentic-ops/builds"
+  ],
+  "path": "/data/bengal1/agentic-ops/productions/zee2026a/logs/601189-u0003.a2.log",
+  "tail_bytes": 65536
+}

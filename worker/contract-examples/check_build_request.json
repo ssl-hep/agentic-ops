@@ -1,0 +1,8 @@
+{
+  "allowed_roots": [
+    "/data/bengal1/agentic-ops/productions/zee2026a",
+    "/data/bengal1/agentic-ops/builds"
+  ],
+  "digest": "sha256:5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+  "tarball_path": "/data/bengal1/agentic-ops/builds/5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592/ewkit-build.tar.gz"
+}

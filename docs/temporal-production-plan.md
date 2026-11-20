@@ -23,6 +23,14 @@ restart and backup-restore checks passed, the Web UI is deployed and the root CA
 offline. No Prometheus during development: metrics move to phase 6.
 Revised 2026-11-20: phase 2 planned in detail: what is real and what is faked, the design
 points it settles, and ten steps.
+Revised 2026-11-20: phase 2 step 1 built (`worker/`). The time-skipping test server runs
+Updates, child workflows and search attribute upserts, but has no visibility queries and no task
+queue statistics.
+Revised 2026-11-20: a table of task queues; the pool keeper, unit spec and manifest described
+in full; phase 2 design points from the workflow sketch (small workflow state, rules outside
+workflow code, abandoned children reporting by signal, group decisions as signals). Decided:
+the workflow does every retry of `run_unit` (Temporal's `maximum_attempts=1`), so each retry is
+a new attempt with its own output path.
 
 This plan describes how agentic-ops automates EWKit ntuple production end to end: an analyst
 narrows a dataset list with the agent, approves it, HTCondor workers on the UChicago AF read
@@ -110,6 +118,23 @@ The pieces:
 | HTCondor workers | AF worker nodes | Poll `ewkit-<production>-<memclass>`, run units reading their inputs over `root://`, heartbeat, write outputs |
 | af-io workers | AF worker nodes, small HTCondor jobs | Poll `af-io`: build EWKit, verify outputs, fetch logs, clean up, write lists. The only workers besides unit workers that touch `/data` |
 
+Task queues. Each is a credential boundary: a worker polls only the queue its credentials are
+for (see [Credentials and security](#credentials-and-security)). Names and IDs are in
+`worker/src/agentic_ops_worker/names.py`, which the server's authorizer depends on.
+
+| Queue | Polled by | Runs |
+|---|---|---|
+| `controller` | controller pods (k8s) | All workflow code. Activities that need no grid credential and no file: `plan_units`, `unit_spec`, `replan_unit`, the reporting writes (`record_unit`, `record_decision`), `collect_evidence`, `match_signatures`, `auto_approve`, `selection_page`, `queue_status`, `group_failures`, `build_lists`, `complete_dataset`, the invariant checks |
+| `ops` | ops-executor pod only (k8s) | Read-only Rucio: `snapshot_dataset`, `refresh_replicas`. HTCondor: `condor_submit` (signs and spools a worker certificate per job), `condor_jobs`, `condor_rm` |
+| `triage` | triage pods (k8s) | `triage`: the agent turns evidence into a typed proposal, only for failures no fixed rule matched |
+| `ewkit-<production>-<memclass>` | unit worker jobs (AF), memory classes `4g`, `8g`, `16g` | `run_unit`: EWRun on one unit's files, heartbeats, output and manifest written to `/data` |
+| `af-io` | small HTCondor jobs (AF), started on demand | Everything else that touches `/data`: `check_build`, `verify_unit`, `fetch_log`, `cleanup_attempt`, `write_lists` |
+
+Only unit worker queues are per production: that gives the pool keeper one backlog per
+production and memory class, and lets the authorizer confine a unit worker to its own
+production. `af-io` is shared, which is why its certificate is the more sensitive one. Only
+`af-io` and unit workers see `/data`; k8s sees only the small results `af-io` activities return.
+
 ## Core concepts
 
 **Production.** One immutable combination of analysis folder, config name, EWKit clone path and
@@ -191,11 +216,30 @@ Search attributes: `ProductionId`, `Dataset`, `DatasetState`, `UnitsDone`, `Unit
 
 ### PoolKeeperWorkflow
 
-One per production. Every few minutes it compares each task queue's backlog (Temporal's task
-queue statistics) and running workers with targets, and calls `condor_submit` on `ops` for more
-workers, with the matching memory request per `memclass` queue. It stops when the production is
-paused, cancelled or done, and removes idle workers at the end. It also removes its own held
-jobs: the AF only removes held or idle jobs after 30 days.
+One per production, ID `pool-keeper/<production_id>`. HTCondor jobs here are generic workers
+that pull units from their production's queues, not one job per unit, so two things are
+separate: dataset workflows put `run_unit` tasks on `ewkit-<production>-<memclass>` and never
+submit jobs, and the pool keeper decides how many workers pull from each queue. Without it,
+tasks would wait with no one polling.
+
+Every few minutes it:
+
+1. reads demand: each memory class queue's backlog and pollers (Temporal's task queue
+   statistics, through `queue_status` on `controller`, since workflow code cannot make client
+   calls)
+2. reads supply: the production's idle, running and held jobs (`condor_jobs` on `ops`)
+3. decides, in a pure function, how many jobs to add per memory class and which to remove,
+   against targets and caps
+4. calls `condor_submit` on `ops` with the matching `request_memory` (the ops-executor signs a
+   worker certificate per job and spools it), and `condor_rm` for surplus idle jobs and its own
+   held jobs: the AF only removes held or idle jobs after 30 days
+
+The production workflow starts it after the launch approval. On pause it stops submitting and
+running workers finish their units; on stop (production done or cancelled) it removes idle jobs
+and exits. It lives as long as the production, so it continues as new every so many ticks.
+Replacing workers is the same mechanism: workers exit after 24 hours or are evicted, the
+backlog remains, and it submits more. A unit moved up a memory class puts backlog on that
+class's queue, and workers of that class follow.
 
 A separate `AfIoKeeperWorkflow` (one for the whole system) starts `af-io` workers on demand
 when the `af-io` queue has a backlog, and adds more as it grows; idle `af-io` workers exit
@@ -289,12 +333,27 @@ worker nodes (home directories may not be). A changed clone is a new production.
 run-time files besides the InstallArea EWRun needs (analysis configs, `data/`) is pinned down
 in phase 3.
 
-Unit spec (JSON): unit id, attempt, production, analysis, config name, tag, DID, input files
-(each a GUID with its candidate `root://` PFNs in order), output directory, events expected.
+**Unit spec** (`UnitSpec` in `worker/src/agentic_ops_worker/contracts.py`): the input of
+`run_unit`, everything a unit worker needs, since it reaches neither Postgres nor Rucio and
+holds no grid credential. Fields: unit ID, attempt, production, analysis, config name, tag,
+DID, memory class, input files (each with GUID, LFN, size, events and its candidate `root://`
+PFNs in preference order, without the XCache prefix), output, manifest and log directories,
+events expected (the sum of Rucio event counts, which `verify_unit` checks against), whether
+it is MC, and `max_events` for the smoke test. Workflows keep only a small summary per unit;
+before each attempt the dataset workflow calls `unit_spec` on `controller`, which builds the
+spec from `dataset_snapshots` and `file_replicas`, so a retry after `refresh_replicas` gets the
+new replicas.
 
-Manifest (JSON): unit id, attempt, status, exit code, events processed, sum of weights,
-cutflow, output path, size, checksum, the replica read for each input, host, start and end
-times, log path.
+**Manifest** (`Manifest`): what `run_unit` returns and also writes next to the output: unit
+ID, attempt, status, exit code, events processed, sum of weights, cutflow (an ordered list),
+output path, size, checksum, the replica read for each input and the candidates that failed
+before it, host, HTCondor `cluster.proc`, start and end times, log path. The spec is the
+request and the manifest the receipt; `verify_unit` checks the receipt against the file.
+
+Both are a contract between two repositories: agentic-ops builds the spec and reads the
+manifest, EWKit's worker does the opposite, and neither imports the other's code.
+`worker/contract-examples/` holds one JSON file per payload, which both sides test against.
+Fields are only ever added, with defaults.
 
 ### Reading inputs
 
@@ -431,14 +490,20 @@ Rules for `af-io`:
 
 | Class | Examples | Handling |
 |---|---|---|
-| infrastructure | eviction, heartbeat timeout, node failure | Temporal retries automatically (heartbeat timeout 10 min) |
+| infrastructure | eviction, heartbeat timeout, node failure | The workflow retries with backoff as a new attempt (heartbeat timeout 10 min); after N tries, triage |
 | transient input | xrootd timeout, no candidate replica readable | `refresh_replicas`, then retry with backoff; after N tries, `BLOCKED` |
 | resources | out of memory, walltime | One retry on the next `memclass` queue, or propose a split |
-| bad input | same file fails on two hosts | Non-retryable; proposal to exclude the file |
-| code or config | traceback, same crash twice | Non-retryable; proposal for a new production |
+| bad input | same file fails on two hosts | Proposal to exclude the file |
+| code or config | traceback, same crash twice | Proposal for a new production |
 
-`run_unit` declares `non_retryable_error_types` for the last two classes, so the agent only sees
-failures Temporal's own retries could not fix.
+**Decided 2026-11-20: the workflow does every retry of `run_unit`.** Its retry policy has
+`maximum_attempts=1`, so Temporal never retries it; each retry is a new attempt with its own
+number, its own output path (`<unit>.a<attempt>.root`) and its own row in `attempts`. Two
+workers can then never write the same file: when a heartbeat times out while the first worker
+is still alive (a network partition, a stalled node), the retry writes `a<n+1>` and the late
+finisher's completion is rejected by the server. Its output is a stray, removed when the
+dataset completes. The other activities keep Temporal's retries; they write nothing that two
+tries could collide on, or write it idempotently.
 
 ### Triage loop
 
@@ -742,27 +807,63 @@ Design points settled in phase 2:
   activities. Every write is an idempotent upsert keyed on unit and attempt, because
   activities retry. The invariants are SQL over the projection, so tests use a real Postgres
   in a container, not an in-memory store.
-- **Error classes** are `ApplicationError` types. `InputUnreadable` is retryable after
-  `refresh_replicas`. `OutOfMemory` and `Walltime` are non-retryable at the activity level:
-  the workflow reschedules the unit on the next memory class (4g, 8g, 16g), because a retry
-  policy cannot change the task queue, and after 16g proposes a split. `BadInput` and
-  `CodeError` go to triage. "The same file fails on two hosts" is counted per file by the
-  dataset workflow.
+- **Error classes** are `ApplicationError` types (`ErrorType` in `contracts.py`). Temporal
+  never retries `run_unit` (`maximum_attempts=1`; see [Retry policy](#retry-policy)): the
+  workflow retries every failure as a new attempt. An eviction, heartbeat timeout or lost
+  worker is retried with backoff, and after a few tries triaged. `InputUnreadable` gets
+  `refresh_replicas` before each retry, and after a few tries the unit is `BLOCKED` and
+  triaged. `OutOfMemory`
+  and `Walltime` go to triage, where a fixed rule proposes the next memory class (4g, 8g,
+  16g; a retry policy cannot change the task queue) and the policy table approves the first
+  increase without a person; past 16g the proposal is a split. A `BadInput` file is retried
+  once; when the same GUID fails on a second host the dataset workflow triages it with a
+  proposal to exclude the file. `CodeError` goes straight to triage.
+- **Small workflow state.** A dataset workflow keeps a summary per unit (ID, file count,
+  events expected, memory class, state, attempt), not file lists, which stay in Postgres; the
+  `unit_spec` activity builds each attempt's spec. Units run concurrently, one coroutine each;
+  splits and exclusions add units while the workflow runs.
+- **Rules outside workflow code.** The signature matcher (`match_signatures`) and the
+  auto-approval policy (`auto_approve`) are `controller` activities, so they can change
+  without workflow versioning. Only the `decide` validator, which checks a decision against
+  its pending proposal (allowed actions, memory cap, maximum files excluded), is workflow code.
 - **History size.** `DatasetWorkflow` keeps its state small and serializable and continues as
-  new when `is_continue_as_new_suggested()` says so, tested with a low threshold. Phase 6
+  new when `is_continue_as_new_suggested()` says so, tested with a low threshold: it stops
+  starting attempts, lets running ones finish, and carries its state over. Search attributes
+  are upserted only when a value changes, since every upsert is a history event. Phase 6
   tunes it.
-- **Cancellation.** Cancelling a production cascades to its children (parent close policy)
-  and to running activities, which receive it through heartbeats. The production workflow
-  then runs `condor_rm` by production tag as a cleanup step that is not itself cancelled.
+- **Children are abandoned and report by signal.** The production workflow continues as new
+  between batches, and a parent close policy would reach its children when it does, so dataset
+  workflows and the pool keeper start with `ParentClosePolicy.ABANDON`. A dataset workflow
+  signals `dataset_done` to `production/<id>`, which reaches whichever run is current.
+  Starting a child that already exists is a no-op (deterministic IDs).
+- **Group decisions arrive as signals.** A workflow can signal another but not send it an
+  Update, so the production workflow's batched triage reaches dataset workflows as a
+  `group_decision` signal, which the dataset workflow checks itself (there is no validator)
+  and applies to its pending proposals with that fingerprint. People's decisions arrive as
+  `decide` Updates through the backend.
+- **Cancellation.** Cancelling a production cancels each running dataset workflow explicitly
+  (they are abandoned children) and their running activities, which receive it through
+  heartbeats. The production workflow catches the cancellation, stops the pool keeper, runs
+  `condor_rm` by production tag and records the production as cancelled.
 - **Two test environments.** Time-skipping for timer logic (backoff, pool keeper interval,
   the 15-minute triage batching window), with fake activities that return at once. The local
   dev server for the end-to-end simulation, with intervals shortened by configuration; it
-  supports search attributes and task queue statistics, which the time-skipping server may
-  not (checked in step 1). The pool keeper reads backlog through an activity in both, since
-  workflow code cannot make client calls.
+  supports visibility queries and task queue statistics, which the time-skipping server does
+  not (checked in step 1: `ListWorkflowExecutions` and `DescribeTaskQueue` are unimplemented
+  there; Updates, child workflows and search attribute upserts work, once the attributes are
+  registered). The pool keeper reads backlog through an activity in both, since workflow code
+  cannot make client calls, so under time skipping that activity is faked; reading the real
+  backlog is tested on the local server.
 - **Clients retry.** Anything holding a client handle (a starter, the CLI, the simulation
   driver) retries RPC errors and reattaches to the workflow by its ID; see the phase 1 restart
   check.
+
+**Decided 2026-11-20: output names across retries.** If Temporal retried `run_unit` after a
+heartbeat timeout while the first worker was still alive, both would write
+`<unit>.a<attempt>.root`. Rather than adding Temporal's activity attempt to the name, the
+workflow does every retry with a new attempt number (see [Retry policy](#retry-policy)): the
+contract stays as it is, and every retry is in the reporting tables. Outputs of attempts whose
+completion the server rejected are found and removed when the dataset completes.
 
 Steps, each about one PR ending in passing tests:
 
@@ -770,7 +871,10 @@ Steps, each about one PR ending in passing tests:
    version, `contracts.py`, helpers for queue names and workflow IDs (`production/<id>`,
    `dataset/<id>/<did>`, production IDs `[a-z0-9]{1,40}`), a CI job. A trivial workflow runs
    in both test environments; check whether the time-skipping server supports Updates, child
-   workflows and search attribute upserts.
+   workflows and search attribute upserts. *Built:* [worker/README.md](../worker/README.md), with the
+   support table; CI in `.github/workflows/worker.yml`. Payloads carry durations as seconds
+   (the default converter cannot encode a `timedelta`) and cutflows as ordered lists (it sorts
+   object keys).
 2. **Pure logic, no Temporal.** Unit planning from file sizes and first-read rates, the unit
    state machine, splits (the parent becomes `SUPERSEDED`), memory-class escalation, error
    classification, the signature matcher (`[3010]`, `std::bad_alloc`, corrupt `TFile`).

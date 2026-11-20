@@ -1,0 +1,5 @@
+{
+  "guid": "A1B2C3D4-E5F6-4789-8ABC-DEF012345678",
+  "pfn": "root://fax.mwt2.org:1094//pnfs/uchicago.edu/atlasdatadisk/rucio/mc23_13p6TeV/9e/02/DAOD_PHYS.40123456._000018.pool.root.1",
+  "reason": "TFile is corrupt: invalid key at offset 1823344"
+}

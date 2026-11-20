@@ -1,0 +1,32 @@
+{
+  "accepted": true,
+  "attempt": 2,
+  "checksum": "sha256:5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592",
+  "cutflow": [
+    {
+      "events": 20000,
+      "name": "all",
+      "sum_of_weights": 18734000.0
+    },
+    {
+      "events": 15873,
+      "name": "trigger",
+      "sum_of_weights": 14871000.0
+    },
+    {
+      "events": 9120,
+      "name": "two electrons",
+      "sum_of_weights": 8540200.0
+    },
+    {
+      "events": 8001,
+      "name": "Z window",
+      "sum_of_weights": 7495000.0
+    }
+  ],
+  "events": 20000,
+  "reasons": [],
+  "size": 512300118,
+  "sum_of_weights": 18734000.0,
+  "unit_id": "601189-u0003"
+}

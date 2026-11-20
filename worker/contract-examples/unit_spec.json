@@ -1,0 +1,37 @@
+{
+  "analysis": "ZeeAnalysis",
+  "attempt": 2,
+  "config_name": "zee_nominal",
+  "did": "mc23_13p6TeV:mc23_13p6TeV.601189.PhPy8EG_AZNLO_Zee.deriv.DAOD_PHYS.e8514_s4162_r15540_p6266",
+  "events_expected": 20000,
+  "files": [
+    {
+      "events": 10000,
+      "guid": "3F2A9C1E-1B7D-4C4E-9E2A-0D6B5A1C2E3F",
+      "lfn": "DAOD_PHYS.40123456._000017.pool.root.1",
+      "pfns": [
+        "root://fax.mwt2.org:1094//pnfs/uchicago.edu/atlasdatadisk/rucio/mc23_13p6TeV/4a/1c/DAOD_PHYS.40123456._000017.pool.root.1",
+        "root://xrootd.lcg.triumf.ca:1094//atlas/atlasdatadisk/rucio/mc23_13p6TeV/4a/1c/DAOD_PHYS.40123456._000017.pool.root.1"
+      ],
+      "size": 4812331004
+    },
+    {
+      "events": 10000,
+      "guid": "A1B2C3D4-E5F6-4789-8ABC-DEF012345678",
+      "lfn": "DAOD_PHYS.40123456._000018.pool.root.1",
+      "pfns": [
+        "root://fax.mwt2.org:1094//pnfs/uchicago.edu/atlasdatadisk/rucio/mc23_13p6TeV/9e/02/DAOD_PHYS.40123456._000018.pool.root.1"
+      ],
+      "size": 4790118220
+    }
+  ],
+  "is_mc": true,
+  "log_dir": "/data/bengal1/agentic-ops/productions/zee2026a/logs",
+  "manifest_dir": "/data/bengal1/agentic-ops/productions/zee2026a/manifests",
+  "max_events": null,
+  "memclass": "8g",
+  "output_dir": "/data/bengal1/agentic-ops/productions/zee2026a/outputs",
+  "production_id": "zee2026a",
+  "tag": "v1.0",
+  "unit_id": "601189-u0003"
+}

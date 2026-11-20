@@ -1,0 +1,13 @@
+{
+  "allowed_roots": [
+    "/data/bengal1/agentic-ops/productions/zee2026a",
+    "/data/bengal1/agentic-ops/builds"
+  ],
+  "directory": "/data/bengal1/agentic-ops/productions/zee2026a/lists",
+  "lists": {
+    "mc23a_Zee.txt": [
+      "/data/bengal1/agentic-ops/productions/zee2026a/outputs/601189-u0003.a2.root"
+    ]
+  },
+  "production_id": "zee2026a"
+}
